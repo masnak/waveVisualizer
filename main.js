@@ -1,13 +1,15 @@
 
 let audioContext;
 let audioContextInitialized = false;
+let audioStream;
 let micSoundAnalyser;
 let waveVisualizer;
 let spectrumVisualizer;
 
 const initBtn = document.getElementById('init-btn');
-const startBtn = document.getElementById('start-btn');
+const recordBtn = document.getElementById('record-btn');
 const playBtn = document.getElementById('play-btn');
+const analyseBtn = document.getElementById('analyse-btn');
 const sampleRate = 44100;
 const waveformCanvas = document.getElementById('waveform-canvas');
 const spectrumCanvas = document.getElementById('spectrum-canvas');
@@ -32,10 +34,10 @@ async function initializeAudioContext() {
 async function initializeAudioAndVisualizer() {
 	await initializeAudioContext();
   
-	const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+	audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   
 	// connect data stream to micSoundAnalyser
-	const source = audioContext.createMediaStreamSource(stream);
+	const source = audioContext.createMediaStreamSource(audioStream);
 	source.connect(micSoundAnalyser);
   
 	// draw waveform
@@ -110,18 +112,19 @@ async function playBack() {
 	};
 }
 
-startBtn.addEventListener('click', async () => {
+recordBtn.addEventListener('click', async () => {
 	if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-		const stream = await getMediaStream();
-		startRecording(stream);
-		startBtn.textContent = 'Now Recording...';
+		startRecording(audioStream);
+		recordBtn.textContent = 'Now Recording...';
 		console.log('recorder started');
 
 		setTimeout(() => {
 			stopRecording();
-			startBtn.textContent = 'Record';
+			recordBtn.textContent = 'Record';
 			playBtn.disabled = false;
 			playBtn.style.fontWeight = 'bold';
+			analyseBtn.disabled = false;
+			analyseBtn.style.fontWeight = 'bold';
 			//playBtn.style.color = 'blue';
 		}, 3000);
 	}

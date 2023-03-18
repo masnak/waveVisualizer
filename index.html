@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -18,21 +18,24 @@
 			color: red;
 			font-weight: bold;
 		}
-		
+		.button-container {
+			margin: 5px;
+		}
     </style>
 </head>
 <body>
 	<h1>Wave and Spectrum Visualizer</h1>
-	
-	<div class="canvas-container">
-    <canvas id="waveform-canvas" width="1200" height="200"></canvas>
-    <canvas id="spectrum-canvas" width="1200" height="200"></canvas>
+	<div class="button-container">
+		<button id="init-btn">Initialize</button>
+		<button id="record-btn" class="bold-red-text">Record</button>
+    	<button id="play-btn" disabled>Playback</button>
+		<button id="analyse-btn" disabled>Analyse</button>
+		<button id="sine-wave-btn" disabled>Play Sine Waves</button>
 	</div>
 
-	<div>
-		<button id="init-btn">Start</button>
-	<button id="start-btn" class="bold-red-text">Record</button>
-    <button id="play-btn" disabled>Playback</button>
+	<div class="canvas-container">
+		<canvas id="waveform-canvas" width="1200" height="200"></canvas>
+		<canvas id="spectrum-canvas" width="1200" height="200"></canvas>
 	</div>
 
 	<script src="./waveVisualizer.js"></script>
