@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wave Visualizer</title>
+	<style>
+        .canvas-container {
+            display: flex;
+            flex-direction: column;
+			align-items: flex-start;
+        }
+		canvas {
+            margin-bottom: 5px;
+        }
+		.bold-red-text {
+			color: red;
+			font-weight: bold;
+		}
+		
+    </style>
+</head>
+<body>
+	<h1>Wave and Spectrum Visualizer</h1>
+	
+	<div class="canvas-container">
+    <canvas id="waveform-canvas" width="1200" height="200"></canvas>
+    <canvas id="spectrum-canvas" width="1200" height="200"></canvas>
+	</div>
+
+	<div>
+		<button id="init-btn">Start</button>
+	<button id="start-btn" class="bold-red-text">Record</button>
+    <button id="play-btn" disabled>Playback</button>
+	</div>
+
+	<script src="./waveVisualizer.js"></script>
+	<script src="./spectrumVisualizer.js"></script>
+	<script src="./main.js"></script>
+	
+
+</body>
+</html>
