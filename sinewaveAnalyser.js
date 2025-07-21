@@ -383,7 +383,7 @@ function displaySineWaves(sineWaves) {
 			
 			if (frequencyComponents.length === 0) {
 				if (typeof showStatusMessage === 'function') {
-					showStatusMessage('解析データがありません。先にAnalyseボタンを押してください。', 'error');
+					showStatusMessage('解析データがありません。先に周波解析ボタンを押してください。', 'error');
 				}
 				return;
 			}

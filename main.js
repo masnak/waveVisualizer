@@ -143,13 +143,13 @@ recordBtn.addEventListener('click', async () => {
 	try {
 		if (!mediaRecorder || mediaRecorder.state === 'inactive') {
 			startRecording(audioStream);
-			recordBtn.textContent = 'Now Recording...';
+			recordBtn.textContent = '録音中...';
 			showStatusMessage('録音を開始しました（2秒間）');
 			console.log('recorder started');
 
 			setTimeout(() => {
 				stopRecording();
-				recordBtn.textContent = 'Record';
+				recordBtn.textContent = '録音開始';
 				playBtn.disabled = false;
 				playBtn.style.fontWeight = 'bold';
 				document.getElementById('analyse-btn').disabled = false;

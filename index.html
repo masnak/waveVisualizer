@@ -36,8 +36,9 @@
         }
         
 		.bold-red-text {
-			color: red;
+			color: white;
 			font-weight: bold;
+			background-color: #dc3545;
 		}
         
 		.button-container {
@@ -143,11 +144,11 @@
 	<h1>Wave and Spectrum Visualizer</h1>
 	
     <div class="button-container">
-		<button id="init-btn">Initialize</button>
-		<button id="record-btn" class="bold-red-text">Record</button>
-    	<button id="play-btn" disabled>Playback</button>
-		<button id="analyse-btn" disabled>Analyse</button>
-		<button id="sine-wave-btn" disabled>Stop Sine Waves</button>
+		<button id="init-btn">初期化</button>
+		<button id="record-btn" class="bold-red-text">録音開始</button>
+    	<button id="play-btn" disabled>音声再生</button>
+		<button id="analyse-btn" disabled>周波解析</button>
+		<button id="sine-wave-btn" disabled>波形停止</button>
 	</div>
     
     <div id="status-message" class="status-message" style="display: none;"></div>
