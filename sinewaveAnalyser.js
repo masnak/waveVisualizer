@@ -120,7 +120,7 @@ async function synthesizeSelectedComponents() {
 		});
 		
 		// 元録音と同じ長さのバッファを作成
-		const duration = 3; // 元録音と同じ3秒
+		const duration = 2; // 元録音と同じ2秒
 		const sampleRate = audioContext.sampleRate;
 		const length = Math.floor(duration * sampleRate);
 		const buffer = audioContext.createBuffer(1, length, sampleRate);
@@ -615,7 +615,7 @@ async function analyseRecording() {
 		});
 
 		const channelData = buffer.getChannelData(0);
-		const fftSize = 8192;
+		const fftSize = 16384;
 		
 		// 音声データの統計情報を計算
 		let maxAmplitude = 0;

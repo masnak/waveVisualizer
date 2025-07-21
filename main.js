@@ -44,7 +44,7 @@ async function initializeAudioContext() {
 
   // Initialize micSoundAnalyser, waveVisualizer, and spectrumVisualizer
   micSoundAnalyser = audioContext.createAnalyser();
-  	micSoundAnalyser.fftSize = 8192;
+  	micSoundAnalyser.fftSize = 16384;
   waveVisualizer = new WaveVisualizer(micSoundAnalyser, waveformCanvas);
   spectrumVisualizer = new SpectrumVisualizer(micSoundAnalyser, spectrumCanvas, audioContext);
 }
@@ -117,7 +117,7 @@ async function playBack() {
 
 		// Connect the source to the visualizers
 		const sourceAnalyser = audioContext.createAnalyser();
-		sourceAnalyser.fftSize = 8192;
+		sourceAnalyser.fftSize = 16384;
 		source.connect(sourceAnalyser);
 		waveVisualizer.analyser = sourceAnalyser;
 		spectrumVisualizer.analyser = sourceAnalyser;
@@ -144,7 +144,7 @@ recordBtn.addEventListener('click', async () => {
 		if (!mediaRecorder || mediaRecorder.state === 'inactive') {
 			startRecording(audioStream);
 			recordBtn.textContent = 'Now Recording...';
-			showStatusMessage('録音を開始しました（3秒間）');
+			showStatusMessage('録音を開始しました（2秒間）');
 			console.log('recorder started');
 
 			setTimeout(() => {
@@ -155,7 +155,7 @@ recordBtn.addEventListener('click', async () => {
 				document.getElementById('analyse-btn').disabled = false;
 				document.getElementById('analyse-btn').style.fontWeight = 'bold';
 				showStatusMessage('録音が完了しました');
-			}, 3000);
+			}, 2000);
 		}
 	} catch (error) {
 		console.error('Recording error:', error);
