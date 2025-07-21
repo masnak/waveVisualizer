@@ -9,17 +9,33 @@ let spectrumVisualizer;
 const initBtn = document.getElementById('init-btn');
 const recordBtn = document.getElementById('record-btn');
 const playBtn = document.getElementById('play-btn');
-const analyseBtn = document.getElementById('analyse-btn');
-const sineWaveBtn = document.getElementById('sine-wave-btn');
 const sampleRate = 44100;
 const waveformCanvas = document.getElementById('waveform-canvas');
 const spectrumCanvas = document.getElementById('spectrum-canvas');
 
+// ステータスメッセージを表示する関数
+function showStatusMessage(message, type = 'success') {
+	const statusElement = document.getElementById('status-message');
+	statusElement.textContent = message;
+	statusElement.className = `status-message status-${type}`;
+	statusElement.style.display = 'block';
+	
+	// 3秒後に自動で非表示にする
+	setTimeout(() => {
+		statusElement.style.display = 'none';
+	}, 3000);
+}
 
 initBtn.addEventListener('click', async () => {
-	await initializeAudioAndVisualizer();
-	initBtn.disabled = true; // Optional: disable the button after initializing
-  });
+	try {
+		await initializeAudioAndVisualizer();
+		initBtn.disabled = true;
+		showStatusMessage('オーディオシステムが正常に初期化されました');
+	} catch (error) {
+		console.error('Initialization error:', error);
+		showStatusMessage('初期化中にエラーが発生しました: ' + error.message, 'error');
+	}
+});
 
 async function initializeAudioContext() {
   if (audioContextInitialized) return;
@@ -28,6 +44,7 @@ async function initializeAudioContext() {
 
   // Initialize micSoundAnalyser, waveVisualizer, and spectrumVisualizer
   micSoundAnalyser = audioContext.createAnalyser();
+  	micSoundAnalyser.fftSize = 8192;
   waveVisualizer = new WaveVisualizer(micSoundAnalyser, waveformCanvas);
   spectrumVisualizer = new SpectrumVisualizer(micSoundAnalyser, spectrumCanvas, audioContext);
 }
@@ -59,7 +76,7 @@ async function initializeAudioAndVisualizer() {
   
 	spectrumVisualizer.drawSpectrum();
 	console.log('spectrum analyser working');
-  }
+}
 
 let mediaRecorder;
 let recordedChunks = [];
@@ -70,6 +87,7 @@ async function getMediaStream() {
 		return stream;
 	} catch (err) {
 		console.error('Error accessing user media:', err);
+		throw err;
 	}
 }
 
@@ -91,43 +109,57 @@ function stopRecording() {
 }
 
 async function playBack() {
-	const buffer = await audioContext.decodeAudioData(await recordedChunks[0].arrayBuffer());
-	const source = audioContext.createBufferSource();
-	source.buffer = buffer;
-	source.connect(audioContext.destination);
+	try {
+		const buffer = await audioContext.decodeAudioData(await recordedChunks[0].arrayBuffer());
+		const source = audioContext.createBufferSource();
+		source.buffer = buffer;
+		source.connect(audioContext.destination);
 
-	// Connect the source to the visualizers
-	const sourceAnalyser = audioContext.createAnalyser();
-	source.connect(sourceAnalyser);
-	waveVisualizer.analyser = sourceAnalyser;
-	spectrumVisualizer.analyser = sourceAnalyser;
+		// Connect the source to the visualizers
+		const sourceAnalyser = audioContext.createAnalyser();
+		sourceAnalyser.fftSize = 8192;
+		source.connect(sourceAnalyser);
+		waveVisualizer.analyser = sourceAnalyser;
+		spectrumVisualizer.analyser = sourceAnalyser;
 
-	source.start();
-	source.onended = () => {
-		console.log('playback finished')
-		// Disconnect the visualizers when the audio stops playing
-		source.disconnect(sourceAnalyser);
-		waveVisualizer.analyser = micSoundAnalyser;
-		spectrumVisualizer.analyser = micSoundAnalyser;
+		source.start();
+		showStatusMessage('録音音声を再生中...');
 		
-	};
+		source.onended = () => {
+			console.log('playback finished');
+			// Disconnect the visualizers when the audio stops playing
+			source.disconnect(sourceAnalyser);
+			waveVisualizer.analyser = micSoundAnalyser;
+			spectrumVisualizer.analyser = micSoundAnalyser;
+			showStatusMessage('再生が完了しました');
+		};
+	} catch (error) {
+		console.error('Playback error:', error);
+		showStatusMessage('再生中にエラーが発生しました: ' + error.message, 'error');
+	}
 }
 
 recordBtn.addEventListener('click', async () => {
-	if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-		startRecording(audioStream);
-		recordBtn.textContent = 'Now Recording...';
-		console.log('recorder started');
+	try {
+		if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+			startRecording(audioStream);
+			recordBtn.textContent = 'Now Recording...';
+			showStatusMessage('録音を開始しました（3秒間）');
+			console.log('recorder started');
 
-		setTimeout(() => {
-			stopRecording();
-			recordBtn.textContent = 'Record';
-			playBtn.disabled = false;
-			playBtn.style.fontWeight = 'bold';
-			analyseBtn.disabled = false;
-			analyseBtn.style.fontWeight = 'bold';
-			//playBtn.style.color = 'blue';
-		}, 3000);
+			setTimeout(() => {
+				stopRecording();
+				recordBtn.textContent = 'Record';
+				playBtn.disabled = false;
+				playBtn.style.fontWeight = 'bold';
+				document.getElementById('analyse-btn').disabled = false;
+				document.getElementById('analyse-btn').style.fontWeight = 'bold';
+				showStatusMessage('録音が完了しました');
+			}, 3000);
+		}
+	} catch (error) {
+		console.error('Recording error:', error);
+		showStatusMessage('録音中にエラーが発生しました: ' + error.message, 'error');
 	}
 });
 
@@ -137,135 +169,5 @@ playBtn.addEventListener('click', async () => {
 	}
 });
 
-
-///////////////////////////////////////////////////////////////////////////////////////
-
-// sinwaveAnalyser.js
-
-// サイン波を再生するための関数
-	async function playSineWave(frequency, amplitude) {
-	const oscillator = audioContext.createOscillator();
-	const gainNode = audioContext.createGain();
-  
-	oscillator.frequency.value = frequency;
-  
-	// Convert amplitude from decibels to linear gain value
-	const gainValue = isFinite(amplitude) ? Math.pow(10, amplitude / 20) : 0;
-
-	gainNode.gain.value = gainValue * 0.1;
-  
-	oscillator.connect(gainNode);
-	gainNode.connect(audioContext.destination);
-  
-	oscillator.start();
-	return { oscillator, stop: () => oscillator.stop() }; // return an object with an oscillator and a stop function
-  }
-  
-  
-  // サイン波のチェックボックスをハンドルする関数
-  
-  async function handleSineWaveCheckbox(event, frequency, amplitudeInDB) {
-	if (event.target.checked) {
-	  // Convert amplitude from decibels to linear gain value
-	  const amplitude = Math.pow(10, amplitudeInDB / 20);
-	  const sineWavePlayer = await playSineWave(frequency, amplitude);
-	  event.target.sineWavePlayer = sineWavePlayer;
-	} else {
-	  event.target.sineWavePlayer.stop();
-	}
-  }
-  
-
-  async function analyseRecording() {
-	const buffer = await audioContext.decodeAudioData(await recordedChunks[0].arrayBuffer());
-	const source = audioContext.createBufferSource();
-	source.buffer = buffer;
-  
-	const fftSize = 2048;
-	const analyser = audioContext.createAnalyser();
-	analyser.fftSize = fftSize;
-	const fftBuffer = new Float32Array(analyser.frequencyBinCount);
-	const timeDomainBuffer = new Float32Array(analyser.fftSize);
-  
-	// Connect the source to the analyser
-	source.connect(analyser);
-	source.start();
-  
-	// Wait for the data to be processed before fetching it
-	await new Promise(resolve => setTimeout(resolve, 100));
-  
-	analyser.getFloatFrequencyData(fftBuffer);
-	analyser.getFloatTimeDomainData(timeDomainBuffer);
-  
-	source.disconnect(analyser);
-  
-	const sineWaves = [];
-  
-	for (let i = 0; i < fftBuffer.length; i++) {
-	  const frequency = i * audioContext.sampleRate / (2 * fftBuffer.length);
-	  // Get amplitude from fftBuffer
-	  const amplitudeInDB = fftBuffer[i];
-  
-	  if (isFinite(amplitudeInDB)) {
-		sineWaves.push({ frequency, amplitude: amplitudeInDB });
-	  }
-	}
-  
-	console.log('Raw sine waves:', sineWaves);
-  
-	// Filter out sine waves with non-finite amplitude values
-	const filteredSineWaves = sineWaves.filter(sineWave => isFinite(sineWave.amplitude));
-  
-	filteredSineWaves.sort((a, b) => b.amplitude - a.amplitude);
-  
-	displaySineWaves(filteredSineWaves.slice(0, 100));
-	console.log('Filtered sine waves:', filteredSineWaves);
-  }
-  
-  
-  function displaySineWaves(filteredSineWaves) {
-	const sineWavesList = document.getElementById("sine-waves-list");
-	sineWavesList.innerHTML = '';
-  
-	filteredSineWaves.forEach(sineWave => {
-	  const listItem = document.createElement("li");
-	  const checkbox = document.createElement("input");
-	  checkbox.type = "checkbox";
-	  checkbox.addEventListener('change', async event => {
-		await handleSineWaveCheckbox(event, sineWave.frequency, sineWave.amplitude);
-	  });
-	  listItem.appendChild(checkbox);
-  
-	  listItem.appendChild(document.createTextNode(`Frequency: ${sineWave.frequency.toFixed(2)} Hz, Amplitude: ${sineWave.amplitude.toFixed(2)} dB`));
-	  sineWavesList.appendChild(listItem);
-	});
-  }
-  
-
-
-  // Analyseボタンがクリックされたときに実行される関数
-  
-  analyseBtn.addEventListener('click', async () => {
-	await analyseRecording();
-	document.getElementById("sine-waves").style.display = "block";
-	analyseBtn.disabled = true;
-	sineWaveBtn.disabled = false;
-	sineWaveBtn.style.fontWeight = 'bold';
-  });
-  
-  
-  sineWaveBtn.addEventListener('click', () => {
-    // Stop playing sine waves
-    const sineWavesList = document.getElementById("sine-waves-list");
-    const checkboxes = sineWavesList.getElementsByTagName("input");
-    for (const checkbox of checkboxes) {
-        if (checkbox.checked) {
-            checkbox.checked = false;
-            checkbox.dispatchEvent(new Event('change'));
-        }
-    }
-});
-
-  
-  
+// Event listeners for analysis functionality are in sinewaveAnalyser.js
 

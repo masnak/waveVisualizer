@@ -6,50 +6,167 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Wave Visualizer</title>
 	<style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
         .canvas-container {
             display: flex;
             flex-direction: column;
 			align-items: flex-start;
+            background-color: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
         }
+        
 		canvas {
             margin-bottom: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
         }
+        
 		.bold-red-text {
 			color: red;
 			font-weight: bold;
 		}
+        
 		.button-container {
-			margin: 5px;
+			margin: 15px 0;
+            text-align: center;
 		}
+        
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover:not(:disabled) {
+            background-color: #45a049;
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        button.bold-red-text {
+            background-color: #f44336;
+        }
+        
+        button.bold-red-text:hover:not(:disabled) {
+            background-color: #da190b;
+        }
+        
+        .sine-waves-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .sine-waves-container h2 {
+            color: #333;
+            margin-top: 0;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        
+        #sine-waves-list {
+            list-style: none;
+            padding: 0;
+        }
+        
+        #sine-waves-list li {
+            margin: 8px 0;
+            padding: 8px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            border-left: 3px solid #4CAF50;
+        }
+        
+        #sine-waves-list input[type="checkbox"] {
+            margin-right: 10px;
+            transform: scale(1.2);
+        }
+        
+        #sine-waves-list label {
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+        
+        #sine-waves-list li:hover {
+            background-color: #e8f5e8;
+        }
+        
+        .status-message {
+            text-align: center;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        
+        .status-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
     </style>
 </head>
 <body>
 	<h1>Wave and Spectrum Visualizer</h1>
-	<div class="button-container">
+	
+    <div class="button-container">
 		<button id="init-btn">Initialize</button>
 		<button id="record-btn" class="bold-red-text">Record</button>
     	<button id="play-btn" disabled>Playback</button>
 		<button id="analyse-btn" disabled>Analyse</button>
 		<button id="sine-wave-btn" disabled>Stop Sine Waves</button>
 	</div>
+    
+    <div id="status-message" class="status-message" style="display: none;"></div>
 
 	<div class="canvas-container">
 		<canvas id="waveform-canvas" width="1200" height="200"></canvas>
 		<canvas id="spectrum-canvas" width="1200" height="200"></canvas>
 	</div>
 
-	<div id="sine-waves" class="sine-waves-container">
-		<h2>Top Sine Waves</h2>
+	<div id="sine-waves" class="sine-waves-container" style="display: none;">
+		<h2>Top Sine Waves (周波数成分)</h2>
+        <p>チェックボックスを選択すると対応する周波数の正弦波が再生されます</p>
 		<ul id="sine-waves-list">
 		</ul>
-	  </div>
-	  
+	</div>
 
 	<script src="./waveVisualizer.js"></script>
 	<script src="./spectrumVisualizer.js"></script>
+	<script src="./sinewaveAnalyser.js"></script>
 	<script src="./main.js"></script>
-	
-	
-
 </body>
 </html>
