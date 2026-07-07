@@ -1,16 +1,25 @@
 # Wave Visualizer（波形ビジュアライザー）
 
-リアルタイム音声可視化と正弦波解析のための JavaScript ベース Web アプリケーション。録音音声を位相情報付きで周波数分解し、選択した成分から音声を再合成できる。
+リアルタイム音声可視化と正弦波解析のための TypeScript ベース Web アプリケーション（Vite）。録音音声を位相情報付きで周波数分解し、選択した成分から音声を再合成できる。
 
 ## プロジェクト構成
 
+> 暫定構成（M2-8 時点）。sinewaveAnalyser.ts は M2-10 でさらに分割予定。最終形は
+> `.ai-workspace/20260707-001-ts-tdd-test-infra-plan.md` の 1.2 節を参照。
+
 ```
 /
-├── index.html              # メインHTMLページ、UIコントロールとcanvas要素（3つ）
-├── main.js                 # メインアプリケーションロジック、録音・再生・初期化処理
-├── waveVisualizer.js       # 波形表示用WaveVisualizerクラス
-├── spectrumVisualizer.js   # 周波数スペクトラム表示用SpectrumVisualizerクラス
-└── sinewaveAnalyser.js     # 位相保持FFT解析、正弦波再生、音声合成、合成波形表示
+├── index.html                          # Vite エントリ（単一 <script type="module" src="/src/main.ts">）
+└── src/
+    ├── main.ts                         # 録音・再生・初期化処理
+    ├── state.ts                        # 共有状態（audioContext / recordedChunks）
+    ├── types.ts                        # 共有型（FrequencyComponent / AnalysisResult）
+    ├── sinewaveAnalyser.ts             # 位相保持FFT解析呼び出し・正弦波再生・音声合成・合成波形表示
+    ├── audio/dsp.ts                    # 純粋関数: DFT・ハミング窓・動的閾値・dB変換（golden-vector 保護）
+    ├── ui/status.ts                    # showStatusMessage
+    └── visualizers/
+        ├── waveVisualizer.ts           # 波形表示用 WaveVisualizer クラス
+        └── spectrumVisualizer.ts       # 周波数スペクトラム表示用 SpectrumVisualizer クラス
 ```
 
 ## 開発・検証

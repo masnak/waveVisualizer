@@ -12,7 +12,7 @@
 ## フェーズ進捗
 
 - M1: テスト基盤 [6/6] (100%) - [状態: ✅ 完了]
-- M2: リファクタ + TS 完全移行 [1/6] (17%) - [状態: 実装中]
+- M2: リファクタ + TS 完全移行 [2/6] (33%) - [状態: 実装中]
 
 ### M1: テスト基盤（自己完結マイルストーン）
 
@@ -30,7 +30,7 @@
 | Step | 内容 | 状態 | 完了ゲート |
 |---|---|---|---|
 | M2-7 | dsp.ts 抽出 + golden-vector 固定（born-ESM 独立モジュール、アプリ未接続） | ✅ 完了 | golden（frequency/rawAmplitude/phase/amplitudeDB/maxAmplitude、rel 1e-6）+ 解析的期待値 + 8kHz 境界、計 11 テストグリーン。coverage 98.73% stmts / 87.5% branches（report-only） |
-| M2-8 | state 設計 + ESM 化（window ブリッジ、葉→根、src/ 移設、dsp.ts 差し替え、audioContext は移行期 state 方式）+ GitHub Pages デプロイ移行（1.4-G、src/ 移設と atomic） | 🟡 ローカル完了・push/Pages Source 切替待ち | 4 ファイル ESM 化・E2E 5 回連続グリーン・`vite build` 成功・`deploy-pages.yml` 作成済み。**計画からの変更点**: CI E2E を build+preview 対象へ切り替える案は `vite preview` の既知の不具合により断念し、dev server 対象のまま維持（詳細下記）。push・Pages Source 切替はユーザー確認後に実施 |
+| M2-8 | state 設計 + ESM 化（window ブリッジ、葉→根、src/ 移設、dsp.ts 差し替え、audioContext は移行期 state 方式）+ GitHub Pages デプロイ移行（1.4-G、src/ 移設と atomic） | ✅ 完了 | 4 ファイル ESM 化・E2E 5 回連続グリーン・`vite build` 成功・GitHub Actions 3 ワークフロー（CI/CI Smoke/Deploy to GitHub Pages）全て初回グリーン・**ライブ URL（masnak.github.io/waveVisualizer）で初期化→録音→解析→合成再生の通しを実機確認済み（スクリーンショット証跡あり）**。**計画からの変更点**: CI E2E の build+preview 対象切替は `vite preview` の既知の不具合により断念（詳細下記） |
 | M2-9 | init() 集約（両ファイル、readyState ガード、ポーリング timeout=resolve） | ⬜ 未着手 | E2E グリーン / resume 経路の手動確認 1 回 |
 | M2-10 | synthesis.ts / signal.ts / collectSelectedComponents（includeTestWaves パラメータ化）抽出 | ⬜ 未着手 | ユニット + E2E グリーン |
 | M2-11 | 全 .ts 化 + allowJs off + rAF start/stop（設計改善と分類）+ Map 化 + AppContext 収斂 | ⬜ 未着手 | `tsc --noEmit`（strict, allowJs off）ゼロ / ブリッジ・state.audioContext 全廃 / ユニット + E2E グリーン |
@@ -40,7 +40,7 @@
 
 ## 現在実行中
 
-**M1 完了**。M2-7 完了。次は M2-8（state 設計 + ESM 化 + GitHub Pages デプロイ移行）着手待ち。M2-8 は現行のライブ GitHub Pages 配信に影響しうる atomic 作業のため、着手前にユーザー確認を挟む。
+**M1 完了。M2-7・M2-8 完了**（GitHub Pages は GitHub Actions デプロイへ移行済み、ライブ URL 動作確認済み）。次は M2-9（init() 集約）着手待ち。
 
 ---
 
@@ -170,6 +170,14 @@
   - GitHub Pages は純粋な静的ファイル CDN で `vite preview` のようなミドルウェアを一切持たないため、**この不具合は実デプロイには影響しない**と判断
   - ユーザーと協議の上、**vite preview を用いたローカル/CI 自動 E2E は断念**。代わりに ①`vite build` のローカル成功確認、②`curl` による dist/ 静的配信の直接検証（実施済み）、③実際に GitHub Pages へデプロイした後のライブ URL に対する手動確認、の 3 点で計画の意図（bundled build でも動作すること）を担保する方針に変更
   - `playwright.config.ts` / `.github/workflows/ci.yml` の `test:e2e` は **dev server 対象のまま維持**（変更なし）。計画の「CI = build+preview（M2-8 で切替）」は本件により不採用とし、この逸脱を正式に記録する
+
+**push・GitHub Pages Source 切替・デプロイ確認（2026-07-08、ユーザー承認済み）**:
+
+- ユーザーに詳細（vite preview 不具合の切り分け経緯・実施手順）を提示し、明示的な承認を得た上で実施
+- 実行順序（ダウンタイム最小化のため）: ① コミット作成（ローカルのみ）→ ② `gh api -X PUT repos/masnak/waveVisualizer/pages -f build_type=workflow` で Pages Source をレガシー branch 配信から GitHub Actions へ切替 → ③ `git push` → ④ 3 ワークフロー（CI/CI Smoke/Deploy to GitHub Pages）の実行確認
+- **結果**: 3 ワークフロー全て初回グリーン（Deploy to GitHub Pages: build 10s + deploy 8s / CI: 5 passed・3 skipped, 22.9s / CI Smoke: 2 passed, 5.2s）
+- `curl` でライブ URL・アセットともに 200 応答を確認後、**実際のライブ URL（`https://masnak.github.io/waveVisualizer/`）に対して Playwright（フェイクマイク）で初期化→録音→周波解析→全て選択→合成再生→比較ボタン活性化までの通しシナリオを実行し成功。フルページスクリーンショットで波形・スペクトラム・合成波形・成分リストが正しく表示されていることを目視確認済み**（M2 完了基準の「Pages 切替後にライブ URL が 200 で応答し主要ワークフローが手動で通ることを確認」を実質的に充足。「手動」の定義は本プロジェクトの CLAUDE.md が定めるフェイクデバイス Playwright 方式に準拠）
+- リポジトリの Pages 設定を `gh api repos/masnak/waveVisualizer/pages` で最終確認: `"build_type":"workflow"`（切替完了）
 
 ---
 
