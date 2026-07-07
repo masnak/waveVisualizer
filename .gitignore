@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Logs / temp
+logs/
+tmp/
+*.log
+
+# AI workspace generated artifacts
+# (.ai-workspace の Markdown はナレッジ資産としてコミット対象)
+.ai-workspace/*.json
+.ai-workspace/playwright/
+.ai-workspace/automation-logs/
+
+# AI machine workspace (機械生成物 — README のみ tracked)
+.ai-machine-workspace/**
+!.ai-machine-workspace/
+!.ai-machine-workspace/README.md
+
+# Claude Code local settings (個人環境固有)
+.claude/settings.local.json
