@@ -13,6 +13,32 @@
 └── sinewaveAnalyser.js     # 位相保持FFT解析、正弦波再生、音声合成、合成波形表示
 ```
 
+## 開発・検証
+
+### 起動
+
+ビルド不要の静的アプリ。`file://` ではマイク権限（getUserMedia）が取得できないため、必ず localhost で配信する。
+
+```bash
+python3 -m http.server 8000    # → http://localhost:8000 で開く
+```
+
+### ブラウザ自動検証
+
+マイク入力が必須のため、自動検証には Chromium のフェイクデバイスフラグを使う（許可ダイアログなしで擬似マイク入力が流れる）:
+
+```
+--use-fake-device-for-media-stream --use-fake-ui-for-media-stream
+```
+
+検証ループ: 変更 → localhost 起動 → 「初期化」→「録音開始」→「周波解析」→ 成分選択 →「合成再生」をブラウザで通し、コンソールエラーがないことを確認する。
+
+### エージェント運用ルール
+
+- ユーザーへの応答・レポートは日本語（技術用語・コード識別子は英語のまま）
+- 作業計画・レポート・進捗は `.ai-workspace/` に `yyyymmdd-NNN-<name>.md` 形式（NNN は日付ごとに 000 からの連番）で記録する
+- 運用詳細は [.ai-workspace/000-ai-progress-management-guide.mdc](./.ai-workspace/000-ai-progress-management-guide.mdc) を参照
+
 ## ブラウザ画面のボタンと機能
 
 ### メインコントロールボタン
