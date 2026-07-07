@@ -1,0 +1,9 @@
+dist/
+coverage/
+playwright-report/
+test-results/
+e2e/fixtures/*.wav
+
+# Markdown プロース（.ai-workspace 進捗記録・エージェント定義・README/CLAUDE.md 等）は
+# Prettier の markdown 整形（改行・リスト記法の変更等）による意図しない差分を避けるため対象外
+*.md

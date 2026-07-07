@@ -19,3 +19,11 @@ tmp/
 
 # Claude Code local settings (個人環境固有)
 .claude/settings.local.json
+
+# Node / test tooling (TS+TDD infra: .ai-workspace/20260707-001-*)
+node_modules/
+dist/
+playwright-report/
+test-results/
+coverage/
+*.tsbuildinfo
