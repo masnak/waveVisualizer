@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "defaultMode": "default",
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~/*)",
+      "Bash(chmod 777:*)",
+      "Bash(chown root:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push origin +*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean -fd:*)",
+      "Bash(git checkout -- .)",
+      "Bash(git branch -D:*)",
+      "Bash(git rebase:*)",
+      "Bash(git update-ref:*)",
+      "Bash(cat *.env*)",
+      "Bash(head *.env*)",
+      "Bash(tail *.env*)",
+      "Bash(less *.env*)",
+      "Bash(more *.env*)",
+      "Bash(cat *secrets*)",
+      "Bash(cat *.pem)",
+      "Bash(cat *.key)",
+      "Bash(curl *--data*@*)",
+      "Bash(curl *-d *@*)",
+      "Bash(curl *-F *@*)",
+      "Bash(curl *--upload-file*)"
+    ]
+  },
+  "sandbox": {
+    "denyRead": [
+      ".env*.local",
+      "**/*.pem",
+      "**/.ssh/*",
+      "~/.aws/**",
+      "**/secrets/**",
+      "**/*.key"
+    ]
+  }
+}
