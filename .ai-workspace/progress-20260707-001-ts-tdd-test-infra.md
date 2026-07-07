@@ -12,7 +12,7 @@
 ## フェーズ進捗
 
 - M1: テスト基盤 [6/6] (100%) - [状態: ✅ 完了]
-- M2: リファクタ + TS 完全移行 [0/6] (0%) - [状態: 待機]
+- M2: リファクタ + TS 完全移行 [1/6] (17%) - [状態: 実装中]
 
 ### M1: テスト基盤（自己完結マイルストーン）
 
@@ -29,7 +29,7 @@
 
 | Step | 内容 | 状態 | 完了ゲート |
 |---|---|---|---|
-| M2-7 | dsp.ts 抽出 + golden-vector 固定（born-ESM 独立モジュール、アプリ未接続） | ⬜ 未着手 | golden（frequency/rawAmplitude/phase/amplitudeDB/maxAmplitude、rel 1e-6）+ 解析的期待値 + 8kHz 境界がグリーン |
+| M2-7 | dsp.ts 抽出 + golden-vector 固定（born-ESM 独立モジュール、アプリ未接続） | ✅ 完了 | golden（frequency/rawAmplitude/phase/amplitudeDB/maxAmplitude、rel 1e-6）+ 解析的期待値 + 8kHz 境界、計 11 テストグリーン。coverage 98.73% stmts / 87.5% branches（report-only） |
 | M2-8 | state 設計 + ESM 化（window ブリッジ、葉→根、src/ 移設、dsp.ts 差し替え、audioContext は移行期 state 方式）+ GitHub Pages デプロイ移行（1.4-G、src/ 移設と atomic） | ⬜ 未着手 | 各ファイル変換ごと E2E グリーン / `vite build` 成功 / CI E2E を build+preview に切替 + 観測値・allowlist 再検証 / Pages が GitHub Actions デプロイへ移行しライブ URL 200 応答 |
 | M2-9 | init() 集約（両ファイル、readyState ガード、ポーリング timeout=resolve） | ⬜ 未着手 | E2E グリーン / resume 経路の手動確認 1 回 |
 | M2-10 | synthesis.ts / signal.ts / collectSelectedComponents（includeTestWaves パラメータ化）抽出 | ⬜ 未着手 | ユニット + E2E グリーン |
@@ -40,7 +40,7 @@
 
 ## 現在実行中
 
-**M1 完了**（M1-1〜M1-6 全ステップ、GitHub Actions 実行確認込み）。次は M2-7（dsp.ts 抽出 + golden-vector 固定）着手待ち。
+**M1 完了**。M2-7 完了。次は M2-8（state 設計 + ESM 化 + GitHub Pages デプロイ移行）着手待ち。M2-8 は現行のライブ GitHub Pages 配信に影響しうる atomic 作業のため、着手前にユーザー確認を挟む。
 
 ---
 
@@ -113,6 +113,17 @@
 - 計画通り「入れないもの」を未導入のまま維持: Playwright ブラウザバイナリキャッシュ / concurrency キャンセル / coverage ゲート
 - ローカルで CI と同一の手順を通しで実行（typecheck && lint && format:check && test && test:e2e）し全グリーンを確認
 - **push 後の実行結果（2026-07-07）**: GitHub Actions run [28873891839](https://github.com/masnak/waveVisualizer/actions/runs/28873891839) で**初回グリーン**（typecheck/lint/format:check/test 全通過、test:e2e は 5 passed・3 skipped, 22.1s）。**M1 完了・価値確定点に到達**
+
+### M2-7: dsp.ts 抽出 + golden-vector 固定（2026-07-07）
+
+- `src/types.ts` 作成: `FrequencyComponent` / `AnalysisResult` 共有型（計画 1.2、早期定義）
+- `src/audio/dsp.ts` 作成: `sinewaveAnalyser.js` の `analyseRecording()` から DFT・ハミング窓・動的閾値・8kHz フィルタ・dB 変換ロジックを `analyseFrequencyComponents(channelData, sampleRate, fftSize=16384)` としてそのまま複製。唯一の変換は `maxAnalysisAmplitude` のグローバル書込 → `AnalysisResult.maxAmplitude` の戻り値化（計画通り）。console.log/warn は挙動維持のためそのまま残置。この時点でアプリからは未参照（`main.js` 等は無変更）
+- `src/audio/dsp.test.ts` 作成、探索スクリプト（`src/audio/_explore.test.ts`、非コミット・作業後削除）で実際の出力を観測してから golden 値を確定:
+  - **golden-vector**: sampleRate=8000/fftSize=512 で bin 8/16/32（125/250/500Hz）に位相付き 3 成分を合成 → ハミング窓のサイドローブ漏れにより実際には **9 成分**が動的閾値を超えて検出されることを観測（105.375Hz 等の漏れ成分含む）。これも含めて `frequency`/`rawAmplitude`/`phase`/`amplitude`(dB)/`maxAmplitude` を rel 1e-6 でロック。決定性テスト（同一入力を 2 回実行し `toEqual`）も追加
+  - **解析的期待値**: bin 中心・振幅 A=1.0 の単一正弦波で `rawAmplitude ≈ 0.5`（A/2、観測誤差 rel ~1e-5、rel 1e-3 で assert）。位相は実装のDFT角度規約（`angle = -2πkn/N`）を手動導出し `phase ≈ atan2(-cos(φ), sin(φ))` と一致することを確認（φ=0 のとき `-π/2`、計画記載の期待値と一致）。5 種類の位相（0, π/6, π/2, π, -π/3）で `it.each` により検証
+  - **8kHz 境界値**: sampleRate=44100/fftSize=1024。**設計の失敗から学んだ点**: 最初 below=bin185(~7967Hz)/above=bin186(~8010Hz) の 2 成分だけを合成したところ隣接 bin 同士でスペクトル漏れが激しく干渉し閾値判定が意図通りにならなかった。anchor 成分を境界から遠い低周波（bin23, ~990.5Hz）に移し、below/above はそれぞれ**単独**で anchor と合成することで漏れを分離。`targetAmp=0.003` で below は採用・above は棄却（10 倍厳格化の効果を確認）、`targetAmp=0.03` で above も採用されることを確認
+- 検証: `npm test` 11 tests 全グリーン / `npm run typecheck`・`npm run lint`・`npm run format:check` エラーゼロ / `npm run test:coverage` で `src/audio/dsp.ts` 98.73% stmts・87.5% branches・100% funcs（report-only、参考値として記録）
+- **`src/sample.test.ts`（M1-5 の scaffold）を削除**。実テストに置き換え完了
 
 ---
 
