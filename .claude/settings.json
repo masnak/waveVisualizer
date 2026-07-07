@@ -26,17 +26,22 @@
       "Bash(curl *--data*@*)",
       "Bash(curl *-d *@*)",
       "Bash(curl *-F *@*)",
-      "Bash(curl *--upload-file*)"
+      "Bash(curl *--upload-file*)",
+      "Bash(curl *-T *)",
+      "Bash(wget *--post-file*)",
+      "Bash(wget *--body-file*)"
     ]
   },
   "sandbox": {
     "denyRead": [
-      ".env*.local",
+      "**/.env*",
       "**/*.pem",
-      "**/.ssh/*",
-      "~/.aws/**",
+      "**/.ssh/**",
+      "**/.aws/**",
+      "**/.netrc",
       "**/secrets/**",
-      "**/*.key"
+      "**/*.key",
+      "**/*.p12"
     ]
   }
 }
