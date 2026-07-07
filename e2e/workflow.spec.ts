@@ -199,3 +199,23 @@ test.describe('branch: silence fixture -> 0 components -> test-wave fallback', (
     tracker.assertClean();
   });
 });
+
+test.describe('bug fix: record-btn disabled until init completes (2026-07-08)', () => {
+  // 既知バグ: record-btn は初期化完了前でも常に押せる状態だったため、
+  // audioStream が未確定のまま MediaRecorder の構築に失敗する競合状態があった
+  // (ユーザー報告: TypeError: Failed to construct 'MediaRecorder': parameter 1
+  // is not of type 'MediaStream'). record-btn を初期化完了までは disabled にする
+  // ことで修正した。この状態遷移そのものを固定する。
+  test('record-btn starts disabled and only enables after init completes', async ({ page }) => {
+    const tracker = trackConsoleAndPageErrors(page);
+    await page.goto('/');
+
+    await expect(page.locator('#record-btn')).toBeDisabled();
+
+    await page.click('#init-btn');
+    await expect(page.locator('#record-btn')).toBeEnabled({ timeout: 5000 });
+    await expect(page.locator('#init-btn')).toBeDisabled();
+
+    tracker.assertClean();
+  });
+});

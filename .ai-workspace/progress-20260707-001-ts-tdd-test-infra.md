@@ -241,6 +241,7 @@
 - [既知-3] main.js の未使用 `const sampleRate = 44100`（デッドコード）→ 記録のみ
 - [盲点-1] suspended → resume 分岐は E2E で実行されない（autoplay 緩和下）→ M2-9 で手動確認
 - [盲点-2] test-wave 3 経路は silence フィクスチャで 0 件にできない場合 E2E 検証不能 → M1-2 で確定。**結果: silence フィクスチャで 5 回連続 0 件を観測、E2E 検証可能と判明（盲点は解消）**
+- [既知-4・修正済み] **record-btn の初期化未完了時競合状態**（2026-07-08、ユーザー実機報告 → 修正）: `record-btn` は元 main.js から一貫して `disabled` 属性を持たず、初期化完了（`audioStream` 確定）前でも押せる状態だった。初期化完了前に押すと `audioStream` が `undefined` のまま `new MediaRecorder(undefined)` が呼ばれ `TypeError: Failed to construct 'MediaRecorder': parameter 1 is not of type 'MediaStream'` で失敗（この場合 `record-btn` のテキストは「録音中...」に変化しない）。フェイクデバイス E2E は許可プロンプトが即時付与されるため踏まなかったが、実マイクでは許可待ちの体感時間が長くなり踏みやすい。`investigate` スキルで実際にライブサイトへ Playwright アクセスし `[error] Recording error: TypeError...` を実地で再現・確定。**修正**: `index.html` の `record-btn` に `disabled` を追加、`main.ts` の初期化完了処理（`initBtn.disabled = true` と同じ箇所）で `recordBtn.disabled = false` を設定。回帰テスト（`e2e/workflow.spec.ts` 「bug fix: record-btn disabled until init completes」）を追加し、修正前に失敗・修正後に成功することを確認済み
 
 ---
 

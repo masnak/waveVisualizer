@@ -23,6 +23,10 @@ initBtn.addEventListener('click', async () => {
   try {
     await initializeAudioAndVisualizer();
     initBtn.disabled = true;
+    // 既知バグ修正（2026-07-08、ユーザー報告）: record-btn は初期化完了前から
+    // 常に押せる状態だったため、audioStream 未確定のまま MediaRecorder の
+    // 構築に失敗する競合状態があった。初期化完了までは無効化する。
+    recordBtn.disabled = false;
     showStatusMessage('オーディオシステムが正常に初期化されました');
   } catch (error) {
     console.error('Initialization error:', error);
