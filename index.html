@@ -155,7 +155,25 @@
 
 	<div class="canvas-container">
 		<canvas id="waveform-canvas" width="1200" height="200"></canvas>
+		<div style="text-align: center; margin: 5px 0; font-size: 12px; color: #666;">
+			<strong>リアルタイム波形表示:</strong> 
+			<span style="color: #00ff00;">■ 緑</span>: マイク入力音声のリアルタイム波形
+		</div>
 		<canvas id="spectrum-canvas" width="1200" height="200"></canvas>
+		<div style="text-align: center; margin: 5px 0; font-size: 12px; color: #666;">
+			<strong>周波数スペクトラム表示</strong>
+		</div>
+	</div>
+
+	<!-- 合成波形表示用の専用キャンバス -->
+	<div id="synthesis-canvas-container" class="canvas-container" style="display: none;">
+		<h3 style="text-align: center; color: #333; margin: 10px 0;">選択サイン波の合成波形</h3>
+		<canvas id="synthesis-canvas" width="1200" height="200"></canvas>
+		<div style="text-align: center; margin: 5px 0; font-size: 12px; color: #666;">
+			<strong>合成波形表示:</strong> 
+			<span style="color: #ff6464;">■ 赤</span>: 選択したサイン波成分の合成結果 
+			<span style="font-style: italic;">(位相情報含む静的表示)</span>
+		</div>
 	</div>
 
 	<div id="sine-waves" class="sine-waves-container" style="display: none;">

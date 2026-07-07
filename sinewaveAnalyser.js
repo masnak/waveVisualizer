@@ -302,19 +302,219 @@ async function playSynthesizedAudio() {
 	}
 }
   
+// 選択されたサイン波の合成波形を計算する関数
+function calculateSynthesisWaveform() {
+	try {
+		const sineWavesList = document.getElementById("sine-waves-list");
+		if (!sineWavesList) {
+			console.warn('sine-waves-listが見つかりません');
+			return [];
+		}
+		
+		const checkboxes = sineWavesList.getElementsByTagName("input");
+		const selectedComponents = [];
+		
+		console.log(`チェックボックス数: ${checkboxes.length}`);
+		
+		// チェックされた成分を収集
+		for (let i = 0; i < checkboxes.length; i++) {
+			const checkbox = checkboxes[i];
+			if (checkbox.checked && checkbox.id.startsWith('sine-wave-')) {
+				const index = parseInt(checkbox.id.replace('sine-wave-', ''));
+				if (frequencyComponents[index]) {
+					selectedComponents.push(frequencyComponents[index]);
+					console.log(`選択された成分: ${frequencyComponents[index].frequency.toFixed(1)}Hz`);
+				}
+			} else if (checkbox.checked && checkbox.id.startsWith('test-wave-')) {
+				// テスト用成分の処理
+				const index = parseInt(checkbox.id.replace('test-wave-', ''));
+				const testFrequencies = [
+					{frequency: 440, rawAmplitude: (maxAnalysisAmplitude || 0.1) * 1.0, phase: 0}, 
+					{frequency: 880, rawAmplitude: (maxAnalysisAmplitude || 0.1) * 0.5, phase: Math.PI/4}, 
+					{frequency: 1320, rawAmplitude: (maxAnalysisAmplitude || 0.1) * 0.25, phase: Math.PI/2}
+				];
+				if (testFrequencies[index]) {
+					selectedComponents.push(testFrequencies[index]);
+					console.log(`選択されたテスト成分: ${testFrequencies[index].frequency.toFixed(1)}Hz`);
+				}
+			}
+		}
+		
+		console.log(`選択された成分数: ${selectedComponents.length}`);
+	
+	if (selectedComponents.length === 0) {
+		// 選択成分がない場合は空の配列を返す
+		return [];
+	}
+	
+	// 合成波形計算
+	const sampleRate = 44100;
+	const displayDuration = 0.2; // 200ms分の波形を表示
+	const prepareDuration = 0.1; // 100ms分の準備時間（定常状態確保のため）
+	const totalDuration = displayDuration + prepareDuration;
+	const totalLength = Math.floor(sampleRate * totalDuration);
+	const displayLength = Math.floor(sampleRate * displayDuration);
+	const prepareLength = Math.floor(sampleRate * prepareDuration);
+	
+	const fullSynthesisData = new Float32Array(totalLength);
+	
+	console.log(`波形計算パラメータ: 表示=${displayLength}サンプル, 準備=${prepareLength}サンプル, 合計=${totalLength}サンプル`);
+	
+	// 振幅のスケーリング（相対振幅を使用）
+	const amplitudeScale = 1000; // rawAmplitudeを増幅
+	
+	// 各成分を加算（デバッグ情報付き）
+	for (const comp of selectedComponents) {
+		const frequency = comp.frequency;
+		const rawAmp = comp.rawAmplitude || 0;
+		const amplitude = rawAmp * amplitudeScale; // スケーリング適用
+		const phase = comp.phase || 0;
+		
+		console.log(`成分追加: ${frequency.toFixed(1)}Hz, 生振幅=${rawAmp.toExponential(3)}, スケール振幅=${amplitude.toFixed(6)}, 位相=${(phase * 180 / Math.PI).toFixed(1)}°`);
+		
+		for (let i = 0; i < totalLength; i++) {
+			const time = i / sampleRate;
+			const sineValue = amplitude * Math.sin(2 * Math.PI * frequency * time + phase);
+			fullSynthesisData[i] += sineValue;
+		}
+	}
+	
+	// 定常状態部分（準備時間後）を表示用データとして抽出
+	const synthesisData = new Float32Array(displayLength);
+	for (let i = 0; i < displayLength; i++) {
+		synthesisData[i] = fullSynthesisData[prepareLength + i];
+	}
+	
+	// 実際の最大振幅を計算
+	let actualMax = 0;
+	let actualMin = 0;
+	for (let i = 0; i < displayLength; i++) {
+		if (synthesisData[i] > actualMax) actualMax = synthesisData[i];
+		if (synthesisData[i] < actualMin) actualMin = synthesisData[i];
+	}
+	
+	const actualRange = Math.max(Math.abs(actualMax), Math.abs(actualMin));
+	console.log(`実際の波形範囲: 最大=${actualMax.toFixed(6)}, 最小=${actualMin.toFixed(6)}, 範囲=${actualRange.toFixed(6)}`);
+	
+		// 実際の振幅に基づいて正規化
+	if (actualRange > 0) {
+		const normalizeByActual = 0.8; // クリッピング防止
+		for (let i = 0; i < displayLength; i++) {
+			synthesisData[i] = (synthesisData[i] / actualRange) * normalizeByActual;
+		}
+		console.log(`正規化完了: 係数=${(normalizeByActual / actualRange).toExponential(3)}`);
+	} else {
+		console.warn('波形範囲が0です - 全て0の値');
+	}
+
+		console.log(`合成波形計算完了: ${selectedComponents.length}成分, ${displayLength}サンプル（定常状態部分を表示）`);
+		return synthesisData;
+		
+	} catch (error) {
+		console.error('合成波形計算でエラー:', error);
+		return [];
+	}
+}
+
+// 合成波形専用ビジュアライザークラス
+class SynthesisWaveVisualizer {
+	constructor() {
+		this.canvas = document.getElementById('synthesis-canvas');
+		this.canvasContainer = document.getElementById('synthesis-canvas-container');
+		this.canvasContext = this.canvas.getContext('2d');
+	}
+	
+	// 合成波形を描画
+	drawSynthesisWaveform(synthesisData) {
+		console.log(`SynthesisWaveVisualizer: 合成波形描画開始 (${synthesisData ? synthesisData.length : 0}サンプル)`);
+		
+		// Set background to black
+		this.canvasContext.fillStyle = 'rgb(0, 0, 0)';
+		this.canvasContext.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+		if (!synthesisData || synthesisData.length === 0) {
+			// 合成データがない場合は中央線のみ表示
+			this.canvasContext.strokeStyle = 'rgb(100, 100, 100)';
+			this.canvasContext.lineWidth = 1;
+			this.canvasContext.beginPath();
+			this.canvasContext.moveTo(0, this.canvas.height / 2);
+			this.canvasContext.lineTo(this.canvas.width, this.canvas.height / 2);
+			this.canvasContext.stroke();
+			
+			// コンテナを非表示にする
+			this.canvasContainer.style.display = 'none';
+			console.log('SynthesisWaveVisualizer: 合成データなし、キャンバス非表示');
+			return;
+		}
+
+		// コンテナを表示
+		this.canvasContainer.style.display = 'block';
+
+		this.canvasContext.lineWidth = 2;
+		this.canvasContext.strokeStyle = 'rgb(255, 100, 100)'; // 赤色で合成波形を表示
+
+		this.canvasContext.beginPath();
+
+		const sliceWidth = this.canvas.width * 1.0 / synthesisData.length;
+		let x = 0;
+
+		for (let i = 0; i < synthesisData.length; i++) {
+			const v = (synthesisData[i] + 1) / 2; // -1~1 を 0~1 に正規化
+			const y = v * this.canvas.height;
+
+			if (i === 0) {
+				this.canvasContext.moveTo(x, y);
+			} else {
+				this.canvasContext.lineTo(x, y);
+			}
+
+			x += sliceWidth;
+		}
+
+		this.canvasContext.stroke();
+		console.log('SynthesisWaveVisualizer: 合成波形描画完了');
+	}
+}
+
+// 合成波形ビジュアライザーのインスタンス
+let synthesisVisualizer = null;
+
+// 合成波形表示を更新する関数
+function updateSynthesisWaveform() {
+	try {
+		// 初回のみインスタンス作成
+		if (!synthesisVisualizer) {
+			synthesisVisualizer = new SynthesisWaveVisualizer();
+		}
+		
+		const synthesisData = calculateSynthesisWaveform();
+		console.log(`合成波形更新: ${synthesisData.length}サンプル`);
+		
+		synthesisVisualizer.drawSynthesisWaveform(synthesisData);
+		
+	} catch (error) {
+		console.error('合成波形更新でエラー:', error);
+	}
+}
+
 // サイン波のチェックボックスをハンドルする関数
 async function handleSineWaveCheckbox(event, frequency, amplitude, rawAmplitude, phase = 0) {
+	console.log(`Checkbox ${event.target.checked ? 'checked' : 'unchecked'} for ${frequency.toFixed(2)} Hz`);
+	
+	// 合成波形を更新（音の再生とは独立して実行）
+	setTimeout(() => {
+		updateSynthesisWaveform();
+	}, 10);
+	
 	try {
-		console.log(`Checkbox ${event.target.checked ? 'checked' : 'unchecked'} for ${frequency.toFixed(2)} Hz`);
-		
 		if (event.target.checked) {
 			const sineWavePlayer = await playSineWave(frequency, amplitude, rawAmplitude, phase);
 			if (sineWavePlayer) {
 				event.target.sineWavePlayer = sineWavePlayer;
 				console.log(`Started sine wave: ${frequency.toFixed(2)} Hz, phase: ${phase.toFixed(3)} rad`);
 			} else {
-				event.target.checked = false;
 				console.error('Failed to create sine wave player');
+				// チェックボックスの状態は維持（波形表示のため）
 			}
 		} else {
 			if (event.target.sineWavePlayer) {
@@ -325,7 +525,7 @@ async function handleSineWaveCheckbox(event, frequency, amplitude, rawAmplitude,
 		}
 	} catch (error) {
 		console.error('Error handling sine wave checkbox:', error);
-		event.target.checked = false;
+		// 音の再生に失敗してもチェックボックスの状態は維持（波形表示のため）
 	}
 }
   
@@ -402,11 +602,16 @@ function displaySineWaves(sineWaves) {
 				}
 			}
 			
-			console.log(`全${frequencyComponents.length}個の成分を選択しました`);
-			
-			if (typeof showStatusMessage === 'function') {
-				showStatusMessage(`解析された全${frequencyComponents.length}個の成分を選択しました。「合成再生」を押してください。`);
-			}
+					console.log(`全${frequencyComponents.length}個の成分を選択しました`);
+		
+		// 合成波形を更新
+		setTimeout(() => {
+			updateSynthesisWaveform();
+		}, 50); // 少し遅延させてチェックボックスの状態更新を確実にする
+		
+		if (typeof showStatusMessage === 'function') {
+			showStatusMessage(`解析された全${frequencyComponents.length}個の成分を選択しました。「合成再生」を押してください。`);
+		}
 			
 		} catch (error) {
 			console.error('全選択でエラー:', error);
@@ -436,15 +641,20 @@ function displaySineWaves(sineWaves) {
 				}
 			}
 			
-			console.log(`${deselectedCount}個の成分を解除し、対応するサイン波を停止しました`);
-			
-			if (typeof showStatusMessage === 'function') {
-				if (deselectedCount > 0) {
-					showStatusMessage(`${deselectedCount}個の成分を解除し、再生中のサイン波を停止しました。`);
-				} else {
-					showStatusMessage('解除する成分がありませんでした。');
-				}
+					console.log(`${deselectedCount}個の成分を解除し、対応するサイン波を停止しました`);
+		
+		// 合成波形を更新（全解除なので空の波形になる）
+		setTimeout(() => {
+			updateSynthesisWaveform();
+		}, 50);
+		
+		if (typeof showStatusMessage === 'function') {
+			if (deselectedCount > 0) {
+				showStatusMessage(`${deselectedCount}個の成分を解除し、再生中のサイン波を停止しました。`);
+			} else {
+				showStatusMessage('解除する成分がありませんでした。');
 			}
+		}
 			
 		} catch (error) {
 			console.error('全解除でエラー:', error);
@@ -709,9 +919,17 @@ async function analyseRecording() {
 		console.log('Dynamic threshold for phase preservation:', dynamicThreshold.toExponential(3));
 		
 		// 各周波数ビンを位相情報付きで分析
+		console.log(`FFT解析詳細: サンプルレート=${sampleRate}Hz, FFTサイズ=${fftSize}, ナイキスト周波数=${nyquistFreq}Hz`);
+		console.log(`周波数分解能: ${sampleRate / fftSize}Hz, 解析範囲: 0-${nyquistFreq}Hz`);
+		
 		for (let i = 1; i < frequencyData.length; i++) {
 			const frequency = (i * nyquistFreq) / (fftSize / 2);
 			const freqData = frequencyData[i];
+			
+			// 不正な高周波成分の検出とログ出力
+			if (frequency > 5000 && freqData.amplitude > dynamicThreshold) {
+				console.warn(`不正な高周波成分検出: ${frequency.toFixed(1)}Hz, 振幅=${freqData.amplitude.toExponential(3)}`);
+			}
 			
 			// dB変換（表示用）
 			let amplitudeDB;
@@ -721,8 +939,18 @@ async function analyseRecording() {
 				amplitudeDB = -Infinity;
 			}
 			
-			// 位相情報と振幅情報を保持
-			if (freqData.amplitude > dynamicThreshold && isFinite(amplitudeDB)) {
+			// 位相情報と振幅情報を保持（ただし人間の声の範囲内のみ）
+			if (freqData.amplitude > dynamicThreshold && isFinite(amplitudeDB) && frequency <= nyquistFreq) {
+				// 人間の声の範囲外の高周波成分をフィルタリング
+				if (frequency > 8000) {
+					// 8kHz以上の成分に対して更に厳しい閾値を適用
+					const highFreqThreshold = dynamicThreshold * 10; // 10倍厳しい閾値
+					if (freqData.amplitude < highFreqThreshold) {
+						continue; // この成分をスキップ
+					}
+					console.log(`高周波成分保持: ${frequency.toFixed(1)}Hz (強い成分のため)`);
+				}
+				
 				sineWaves.push({ 
 					frequency: frequency, 
 					amplitude: amplitudeDB,
