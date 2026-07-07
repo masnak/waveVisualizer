@@ -44,6 +44,7 @@ class WaveVisualizer {
 
         requestAnimationFrame(() => this.drawWaveform());
     }
+
 	
 }
 

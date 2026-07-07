@@ -41,10 +41,30 @@ async function initializeAudioContext() {
   if (audioContextInitialized) return;
   audioContext = new AudioContext();
   audioContextInitialized = true;
+  
+  // AudioContext初期化確認
+  console.log(`🎵 AudioContext初期化: ${audioContext.sampleRate}Hz (ナイキスト: ${audioContext.sampleRate / 2}Hz)`);
+  
+  // 異常サンプリングレートの検出
+  if (audioContext.sampleRate === 48000) {
+    console.warn(`⚠️ 48kHzサンプリング → 24kHzまで表示`);
+  } else if (audioContext.sampleRate !== 44100) {
+    console.warn(`⚠️ 非標準サンプリングレート: ${audioContext.sampleRate}Hz`);
+  }
 
   // Initialize micSoundAnalyser, waveVisualizer, and spectrumVisualizer
   micSoundAnalyser = audioContext.createAnalyser();
   	micSoundAnalyser.fftSize = 16384;
+  
+  // Analyser設定情報の保存（録音時に表示用）
+  window.analyserSettings = {
+    fftSize: micSoundAnalyser.fftSize,
+    frequencyBinCount: micSoundAnalyser.frequencyBinCount,
+    minDecibels: micSoundAnalyser.minDecibels,
+    maxDecibels: micSoundAnalyser.maxDecibels,
+    smoothingTimeConstant: micSoundAnalyser.smoothingTimeConstant
+  };
+  
   waveVisualizer = new WaveVisualizer(micSoundAnalyser, waveformCanvas);
   spectrumVisualizer = new SpectrumVisualizer(micSoundAnalyser, spectrumCanvas, audioContext);
 }
@@ -106,6 +126,10 @@ function startRecording(stream) {
 function stopRecording() {
 	mediaRecorder.stop();
 	console.log('recorder stopped');
+	// スペクトラム分析モードを録音終了に設定
+	if (spectrumVisualizer) {
+		spectrumVisualizer.setRecordingMode(false);
+	}
 }
 
 async function playBack() {
@@ -146,6 +170,10 @@ recordBtn.addEventListener('click', async () => {
 			recordBtn.textContent = '録音中...';
 			showStatusMessage('録音を開始しました（2秒間）');
 			console.log('recorder started');
+			// スペクトラム分析モードを録音中に設定
+			if (spectrumVisualizer) {
+				spectrumVisualizer.setRecordingMode(true);
+			}
 
 			setTimeout(() => {
 				stopRecording();
@@ -155,6 +183,10 @@ recordBtn.addEventListener('click', async () => {
 				document.getElementById('analyse-btn').disabled = false;
 				document.getElementById('analyse-btn').style.fontWeight = 'bold';
 				showStatusMessage('録音が完了しました');
+				// スペクトラム分析モードを録音終了に設定
+				if (spectrumVisualizer) {
+					spectrumVisualizer.setRecordingMode(false);
+				}
 			}, 2000);
 		}
 	} catch (error) {
