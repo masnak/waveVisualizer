@@ -30,7 +30,7 @@
 | Step | 内容 | 状態 | 完了ゲート |
 |---|---|---|---|
 | M2-7 | dsp.ts 抽出 + golden-vector 固定（born-ESM 独立モジュール、アプリ未接続） | ✅ 完了 | golden（frequency/rawAmplitude/phase/amplitudeDB/maxAmplitude、rel 1e-6）+ 解析的期待値 + 8kHz 境界、計 11 テストグリーン。coverage 98.73% stmts / 87.5% branches（report-only） |
-| M2-8 | state 設計 + ESM 化（window ブリッジ、葉→根、src/ 移設、dsp.ts 差し替え、audioContext は移行期 state 方式）+ GitHub Pages デプロイ移行（1.4-G、src/ 移設と atomic） | ⬜ 未着手 | 各ファイル変換ごと E2E グリーン / `vite build` 成功 / CI E2E を build+preview に切替 + 観測値・allowlist 再検証 / Pages が GitHub Actions デプロイへ移行しライブ URL 200 応答 |
+| M2-8 | state 設計 + ESM 化（window ブリッジ、葉→根、src/ 移設、dsp.ts 差し替え、audioContext は移行期 state 方式）+ GitHub Pages デプロイ移行（1.4-G、src/ 移設と atomic） | 🟡 ローカル完了・push/Pages Source 切替待ち | 4 ファイル ESM 化・E2E 5 回連続グリーン・`vite build` 成功・`deploy-pages.yml` 作成済み。**計画からの変更点**: CI E2E を build+preview 対象へ切り替える案は `vite preview` の既知の不具合により断念し、dev server 対象のまま維持（詳細下記）。push・Pages Source 切替はユーザー確認後に実施 |
 | M2-9 | init() 集約（両ファイル、readyState ガード、ポーリング timeout=resolve） | ⬜ 未着手 | E2E グリーン / resume 経路の手動確認 1 回 |
 | M2-10 | synthesis.ts / signal.ts / collectSelectedComponents（includeTestWaves パラメータ化）抽出 | ⬜ 未着手 | ユニット + E2E グリーン |
 | M2-11 | 全 .ts 化 + allowJs off + rAF start/stop（設計改善と分類）+ Map 化 + AppContext 収斂 | ⬜ 未着手 | `tsc --noEmit`（strict, allowJs off）ゼロ / ブリッジ・state.audioContext 全廃 / ユニット + E2E グリーン |
@@ -124,6 +124,52 @@
   - **8kHz 境界値**: sampleRate=44100/fftSize=1024。**設計の失敗から学んだ点**: 最初 below=bin185(~7967Hz)/above=bin186(~8010Hz) の 2 成分だけを合成したところ隣接 bin 同士でスペクトル漏れが激しく干渉し閾値判定が意図通りにならなかった。anchor 成分を境界から遠い低周波（bin23, ~990.5Hz）に移し、below/above はそれぞれ**単独**で anchor と合成することで漏れを分離。`targetAmp=0.003` で below は採用・above は棄却（10 倍厳格化の効果を確認）、`targetAmp=0.03` で above も採用されることを確認
 - 検証: `npm test` 11 tests 全グリーン / `npm run typecheck`・`npm run lint`・`npm run format:check` エラーゼロ / `npm run test:coverage` で `src/audio/dsp.ts` 98.73% stmts・87.5% branches・100% funcs（report-only、参考値として記録）
 - **`src/sample.test.ts`（M1-5 の scaffold）を削除**。実テストに置き換え完了
+
+### M2-8: state 設計 + ESM 化 + GitHub Pages デプロイ移行（2026-07-07/08・ローカル完了、push 待ち）
+
+**技術的前提の事前検証（実装前）**:
+
+- ESM 移行の中核前提（「変換済み module が未変換の classic script のトップレベル `let`/関数宣言をベア識別子として読めるか」）は計画のどこにも実証されていなかったため、本番デモを壊すリスクを避けるべく最小の再現ケース（classic script の `let`/`function` を module 側から bare 参照）を作って実際のブラウザ（Playwright）で検証。**結果: 読める**ことを確認（`bareLet: 42`, `bareFunction: "from classic function"` を観測、`window.classicTopLevelLet` は `undefined` で let/const が window に付かないことも確認）。これにより sinewaveAnalyser.ts が未変換の main.js から `audioContext`/`recordedChunks`/`showStatusMessage` を安全に bare 参照できる設計が成立することを事前に実証
+
+**state.ts 設計（1.4-A）**:
+
+- 当初想定より対象を絞り込み: `audioContext` と `recordedChunks` の**2 項目のみ**を `state.ts` に集約。`micSoundAnalyser`/`waveVisualizer`/`spectrumVisualizer`（インスタンス）/`mediaRecorder`/`audioStream` は main.js 内でしか読まれないため state.ts に含めず、そのファイルのローカル変数のまま残した（「グローバル変数の引っ越しにしない」という 1.4-A の原則を実地で確認）
+- 移行中（main.js が classic のままの間）は `window.appState`（state オブジェクトの window ブリッジ）経由で main.js 側から `window.appState.audioContext = audioContext` のようにミラー書込みする最小限の追加を実施。main.ts 変換完了時にブリッジを除去し、通常の import に一本化
+
+**showStatusMessage の扱い（計画になかった判断）**:
+
+- 計画の目標ディレクトリ構成には `ui/status.ts` があったが、いつ切り出すかは明記されていなかった。sinewaveAnalyser.ts 変換時点で born-ESM の独立モジュールとして早期に切り出し（dsp.ts と同じ思想）、main.js（classic）は自身の重複定義をそのまま維持 → main.ts 変換時に import へ統合、という形で bare-global 依存を完全に回避した
+
+**変換順序と実施内容（計画通り 葉→根）**:
+
+1. `waveVisualizer.js` → `src/visualizers/waveVisualizer.ts`（クラスをそのまま複製、window ブリッジ）
+2. `spectrumVisualizer.js` → `src/visualizers/spectrumVisualizer.ts`（同上。`window.analyserSettings` の型宣言は残置）
+3. `sinewaveAnalyser.js` → `src/sinewaveAnalyser.ts`（最大のファイル、1040 行）。`state.ts`/`ui/status.ts`/`dsp.ts` を import。`analyseRecording()` 内の DFT 計算をまるごと `analyseFrequencyComponents()` 呼び出しへ差し替え（golden-vector が保護）。**main.js に 2 行のミラー書込み追加**（`audioContext`/`recordedChunks` の再代入箇所）
+4. `main.js` → `src/main.ts`（最後）。`state.ts`/`ui/status.ts`/visualizer クラスを正式 import へ切替、`sinewaveAnalyser.js` を副作用目的で bare import。全 window ブリッジ（`WaveVisualizer`/`SpectrumVisualizer`/`appState`）を除去。`index.html` を単一 `<script type="module" src="/src/main.ts">` エントリに統合
+
+各ステップで `typecheck`/`lint`/`format:check` エラーゼロ + E2E グリーンを確認（3 と 4 は特に慎重に複数回実行）。
+
+**発見した既存バグ（記録のみ、TS strict 化で顕在化）**:
+
+- `selectedCount`（全選択ハンドラ内のローカル変数）は元 main.js でも代入されるだけで一切参照されない dead code だった。TS の `no-unused-vars` で初めて検出。観測不能な変更（削除しても出力に一切影響しない）のため削除
+- `typeof showStatusMessage === 'function'` の防御チェックは import ベースの静的解決に置き換わったことで意味を持たなくなったため、書き換え時に自然に単純呼び出しへ簡略化（挙動に影響なし。呼び出し時点では常に関数が存在することが保証されるため）
+
+**E2E テストの修正（アプリの内部実装非依存化）**:
+
+- main.ts の ESM 化により `page.evaluate(() => recordedChunks)` のような bare global 参照が不可能になった（意図した設計変化）。スモークテストを、アプリ内部のモジュール境界に依存しない形へ書き換え: `page.addInitScript()` でブラウザ標準の `MediaRecorder` コンストラクタ自体を計装し、実際に生成された `Blob`/`mimeType` を直接観測する方式に変更。これにより今後のさらなるリファクタ（M2-9〜M2-11）でモジュール構造が変わってもこのテストは影響を受けない
+
+**vite build + GitHub Pages 対応**:
+
+- `vite.config.ts` に `base: command === 'build' ? '/waveVisualizer/' : '/'` を条件分岐で追加（dev server の E2E baseURL に影響を与えないため）
+- `npm run build` 成功を確認（11 modules → `dist/index.html` + `dist/assets/index-*.js`、29.42kB）。`dist/index.html` のアセット参照が `/waveVisualizer/assets/...` に正しく書き換わることを確認
+- `.github/workflows/deploy-pages.yml` 作成（`vite build` → `actions/upload-pages-artifact` → `actions/deploy-pages`、`permissions: {contents: read, pages: write, id-token: write}`、`concurrency: {group: pages, cancel-in-progress: false}`）
+
+**計画からの重要な逸脱: `vite preview` の不具合により CI E2E の build+preview 切替を断念**:
+
+- 計画は「M2-8 完了後、CI の E2E を build+preview 対象に切替」としていたが、`vite preview` + `base` サブパス設定の組み合わせで、実ブラウザからの ES module スクリプト読み込み（`<script type="module">`、常に `Origin` ヘッダー付き CORS モードでフェッチされる仕様）だけが 404 になる、または SPA フォールバックにより誤って `index.html` の内容が返る不具合を発見。`curl`（ヘッダーなし）や `page.evaluate()` 内の `fetch()` では再現しないため長時間切り分けに苦労したが、最終的に **Vite 本体の既知の不具合カテゴリ**（`connect-history-api-fallback` の Accept ヘッダー判定が実ブラウザのリクエストと食い違う。[vitejs/vite#15022](https://github.com/vitejs/vite/issues/15022) 等）であり、`crossorigin` 属性の有無に関わらず発生することを実験で確認
+  - GitHub Pages は純粋な静的ファイル CDN で `vite preview` のようなミドルウェアを一切持たないため、**この不具合は実デプロイには影響しない**と判断
+  - ユーザーと協議の上、**vite preview を用いたローカル/CI 自動 E2E は断念**。代わりに ①`vite build` のローカル成功確認、②`curl` による dist/ 静的配信の直接検証（実施済み）、③実際に GitHub Pages へデプロイした後のライブ URL に対する手動確認、の 3 点で計画の意図（bundled build でも動作すること）を担保する方針に変更
+  - `playwright.config.ts` / `.github/workflows/ci.yml` の `test:e2e` は **dev server 対象のまま維持**（変更なし）。計画の「CI = build+preview（M2-8 で切替）」は本件により不採用とし、この逸脱を正式に記録する
 
 ---
 

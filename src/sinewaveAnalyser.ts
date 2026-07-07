@@ -1,14 +1,40 @@
-// sinwaveAnalyser.js
+// sinewaveAnalyser.js から born-ESM へ複製（M2-8）。挙動は維持しつつ 2 点を変換:
+// ① audioContext / recordedChunks は state.ts 経由（1.4-A 移行期の例外）
+// ② analyseRecording() の DFT 計算部分は dsp.ts の analyseFrequencyComponents() 呼び出しへ差し替え
+//    （計画通り、この差し替えを golden-vector が保護する）
+// showStatusMessage は ui/status.ts から import（main.ts も同じ関数を import する）。
+import { state } from './state.js';
+import { showStatusMessage } from './ui/status.js';
+import { analyseFrequencyComponents } from './audio/dsp.js';
+import type { FrequencyComponent } from './types.js';
 
 // グローバル変数：解析結果の最大振幅を保存（相対音量計算用）
 let maxAnalysisAmplitude = 0;
 // グローバル変数：位相情報付き周波数成分を保存
-let frequencyComponents = [];
+let frequencyComponents: FrequencyComponent[] = [];
 // グローバル変数：合成音声用AudioBuffer
-let synthesizedBuffer = null;
+let synthesizedBuffer: AudioBuffer | null = null;
+
+interface SineWavePlayer {
+  source: AudioBufferSourceNode;
+  buffer: AudioBuffer;
+  frequency: number;
+  amplitude: number;
+  rawAmplitude: number;
+  phase: number;
+  gainValue: number;
+  stop: () => void;
+}
+
+type CheckboxWithPlayer = HTMLInputElement & { sineWavePlayer?: SineWavePlayer | null };
 
 // 位相情報付きサイン波を再生するための関数
-async function playSineWave(frequency, amplitude, rawAmplitude, phase = 0) {
+async function playSineWave(
+  frequency: number,
+  amplitude: number,
+  rawAmplitude: number,
+  phase = 0,
+): Promise<SineWavePlayer | null> {
   try {
     console.log(
       `Creating sine wave: ${frequency.toFixed(2)} Hz, phase: ${phase.toFixed(3)} rad (${((phase * 180) / Math.PI).toFixed(1)}°)`,
@@ -16,13 +42,13 @@ async function playSineWave(frequency, amplitude, rawAmplitude, phase = 0) {
 
     // 短い時間の位相制御可能なAudioBufferを生成
     const duration = 5; // 5秒間の連続再生
-    const sampleRate = audioContext.sampleRate;
+    const sampleRate = state.audioContext!.sampleRate;
     const length = Math.floor(duration * sampleRate);
-    const buffer = audioContext.createBuffer(1, length, sampleRate);
+    const buffer = state.audioContext!.createBuffer(1, length, sampleRate);
     const data = buffer.getChannelData(0);
 
     // 相対振幅を正確に保持した音量計算
-    let gainValue;
+    let gainValue: number;
     if (maxAnalysisAmplitude > 0 && rawAmplitude > 0) {
       const relativeAmplitude = rawAmplitude / maxAnalysisAmplitude;
       const baseGainLevel = 0.15;
@@ -40,13 +66,13 @@ async function playSineWave(frequency, amplitude, rawAmplitude, phase = 0) {
     }
 
     // AudioBufferSourceNodeで再生
-    const source = audioContext.createBufferSource();
+    const source = state.audioContext!.createBufferSource();
     source.buffer = buffer;
-    source.connect(audioContext.destination);
+    source.connect(state.audioContext!.destination);
 
     // Audio contextの状態を確認
-    if (audioContext.state === 'suspended') {
-      await audioContext.resume();
+    if (state.audioContext!.state === 'suspended') {
+      await state.audioContext!.resume();
     }
 
     source.start();
@@ -66,7 +92,7 @@ async function playSineWave(frequency, amplitude, rawAmplitude, phase = 0) {
         try {
           source.stop();
           console.log(`Sine wave stopped: ${frequency.toFixed(2)} Hz`);
-        } catch (e) {
+        } catch {
           console.log('Source already stopped');
         }
       },
@@ -78,14 +104,14 @@ async function playSineWave(frequency, amplitude, rawAmplitude, phase = 0) {
 }
 
 // 位相情報付き音声合成（選択された成分から完全な音声を生成）
-async function synthesizeSelectedComponents() {
+async function synthesizeSelectedComponents(): Promise<AudioBuffer | null> {
   try {
     console.log('=== 位相制御音声合成開始 ===');
 
     // チェックされた成分を取得
-    const sineWavesList = document.getElementById('sine-waves-list');
+    const sineWavesList = document.getElementById('sine-waves-list')!;
     const checkboxes = sineWavesList.getElementsByTagName('input');
-    const selectedComponents = [];
+    const selectedComponents: (FrequencyComponent & { originalIndex: number })[] = [];
 
     console.log(`チェックボックス総数: ${checkboxes.length}`);
 
@@ -111,9 +137,7 @@ async function synthesizeSelectedComponents() {
 
     if (selectedComponents.length === 0) {
       console.warn('合成用の成分が選択されていません');
-      if (typeof showStatusMessage === 'function') {
-        showStatusMessage('周波数成分を選択してから合成再生ボタンを押してください', 'error');
-      }
+      showStatusMessage('周波数成分を選択してから合成再生ボタンを押してください', 'error');
       return null;
     }
 
@@ -129,9 +153,9 @@ async function synthesizeSelectedComponents() {
 
     // 元録音と同じ長さのバッファを作成
     const duration = 2; // 元録音と同じ2秒
-    const sampleRate = audioContext.sampleRate;
+    const sampleRate = state.audioContext!.sampleRate;
     const length = Math.floor(duration * sampleRate);
-    const buffer = audioContext.createBuffer(1, length, sampleRate);
+    const buffer = state.audioContext!.createBuffer(1, length, sampleRate);
     const data = buffer.getChannelData(0);
 
     console.log(`合成音声バッファ作成: ${duration}秒, ${sampleRate}Hz, ${length}サンプル`);
@@ -154,7 +178,7 @@ async function synthesizeSelectedComponents() {
       const relativeAmplitude = comp.rawAmplitude / maxAnalysisAmplitude;
 
       // 人間の声に適した音量設定
-      let baseGainLevel;
+      let baseGainLevel: number;
       if (relativeAmplitude > 0.5) {
         baseGainLevel = 0.4; // 主要成分
       } else if (relativeAmplitude > 0.1) {
@@ -252,30 +276,24 @@ async function synthesizeSelectedComponents() {
     console.log('=== 位相制御音声合成完了 ===');
 
     // 成功メッセージ
-    if (typeof showStatusMessage === 'function') {
-      showStatusMessage(
-        `${selectedComponents.length}個の成分で位相制御音声合成が完了しました。再生します...`,
-      );
-    }
+    showStatusMessage(
+      `${selectedComponents.length}個の成分で位相制御音声合成が完了しました。再生します...`,
+    );
 
     return buffer;
   } catch (error) {
     console.error('位相制御音声合成でエラー:', error);
-    if (typeof showStatusMessage === 'function') {
-      showStatusMessage('音声合成中にエラーが発生しました: ' + error.message, 'error');
-    }
+    showStatusMessage('音声合成中にエラーが発生しました: ' + (error as Error).message, 'error');
     return null;
   }
 }
 
 // 合成音声を再生
-async function playSynthesizedAudio() {
+async function playSynthesizedAudio(): Promise<void> {
   try {
     if (!synthesizedBuffer) {
       console.warn('合成音声バッファがありません');
-      if (typeof showStatusMessage === 'function') {
-        showStatusMessage('先に「合成再生」ボタンを押してください', 'error');
-      }
+      showStatusMessage('先に「合成再生」ボタンを押してください', 'error');
       return;
     }
 
@@ -284,47 +302,41 @@ async function playSynthesizedAudio() {
       `バッファ情報: ${synthesizedBuffer.duration.toFixed(2)}秒, ${synthesizedBuffer.sampleRate}Hz`,
     );
 
-    const source = audioContext.createBufferSource();
+    const source = state.audioContext!.createBufferSource();
     source.buffer = synthesizedBuffer;
-    source.connect(audioContext.destination);
+    source.connect(state.audioContext!.destination);
 
-    if (audioContext.state === 'suspended') {
-      await audioContext.resume();
+    if (state.audioContext!.state === 'suspended') {
+      await state.audioContext!.resume();
       console.log('AudioContext resumed');
     }
 
     source.start();
     console.log('合成音声の再生を開始しました');
 
-    if (typeof showStatusMessage === 'function') {
-      showStatusMessage('位相制御で合成された音声を再生中...');
-    }
+    showStatusMessage('位相制御で合成された音声を再生中...');
 
     source.onended = () => {
       console.log('合成音声の再生が終了しました');
-      if (typeof showStatusMessage === 'function') {
-        showStatusMessage('合成音声の再生が完了しました。「原音との比較」で聞き比べてください。');
-      }
+      showStatusMessage('合成音声の再生が完了しました。「原音との比較」で聞き比べてください。');
     };
   } catch (error) {
     console.error('合成音声再生でエラー:', error);
-    if (typeof showStatusMessage === 'function') {
-      showStatusMessage('合成音声の再生でエラーが発生しました: ' + error.message, 'error');
-    }
+    showStatusMessage('合成音声の再生でエラーが発生しました: ' + (error as Error).message, 'error');
   }
 }
 
 // 選択されたサイン波の合成波形を計算する関数
-function calculateSynthesisWaveform() {
+function calculateSynthesisWaveform(): Float32Array {
   try {
     const sineWavesList = document.getElementById('sine-waves-list');
     if (!sineWavesList) {
       console.warn('sine-waves-listが見つかりません');
-      return [];
+      return new Float32Array(0);
     }
 
     const checkboxes = sineWavesList.getElementsByTagName('input');
-    const selectedComponents = [];
+    const selectedComponents: { frequency: number; rawAmplitude: number; phase: number }[] = [];
 
     console.log(`チェックボックス数: ${checkboxes.length}`);
 
@@ -360,7 +372,7 @@ function calculateSynthesisWaveform() {
 
     if (selectedComponents.length === 0) {
       // 選択成分がない場合は空の配列を返す
-      return [];
+      return new Float32Array(0);
     }
 
     // 合成波形計算
@@ -435,20 +447,24 @@ function calculateSynthesisWaveform() {
     return synthesisData;
   } catch (error) {
     console.error('合成波形計算でエラー:', error);
-    return [];
+    return new Float32Array(0);
   }
 }
 
 // 合成波形専用ビジュアライザークラス
 class SynthesisWaveVisualizer {
+  canvas: HTMLCanvasElement;
+  canvasContainer: HTMLElement;
+  canvasContext: CanvasRenderingContext2D;
+
   constructor() {
-    this.canvas = document.getElementById('synthesis-canvas');
-    this.canvasContainer = document.getElementById('synthesis-canvas-container');
-    this.canvasContext = this.canvas.getContext('2d');
+    this.canvas = document.getElementById('synthesis-canvas') as HTMLCanvasElement;
+    this.canvasContainer = document.getElementById('synthesis-canvas-container')!;
+    this.canvasContext = this.canvas.getContext('2d')!;
   }
 
   // 合成波形を描画
-  drawSynthesisWaveform(synthesisData) {
+  drawSynthesisWaveform(synthesisData: Float32Array): void {
     console.log(
       `SynthesisWaveVisualizer: 合成波形描画開始 (${synthesisData ? synthesisData.length : 0}サンプル)`,
     );
@@ -502,10 +518,10 @@ class SynthesisWaveVisualizer {
 }
 
 // 合成波形ビジュアライザーのインスタンス
-let synthesisVisualizer = null;
+let synthesisVisualizer: SynthesisWaveVisualizer | null = null;
 
 // 合成波形表示を更新する関数
-function updateSynthesisWaveform() {
+function updateSynthesisWaveform(): void {
   try {
     // 初回のみインスタンス作成
     if (!synthesisVisualizer) {
@@ -522,9 +538,16 @@ function updateSynthesisWaveform() {
 }
 
 // サイン波のチェックボックスをハンドルする関数
-async function handleSineWaveCheckbox(event, frequency, amplitude, rawAmplitude, phase = 0) {
+async function handleSineWaveCheckbox(
+  event: Event,
+  frequency: number,
+  amplitude: number,
+  rawAmplitude: number,
+  phase = 0,
+): Promise<void> {
+  const target = event.target as CheckboxWithPlayer;
   console.log(
-    `Checkbox ${event.target.checked ? 'checked' : 'unchecked'} for ${frequency.toFixed(2)} Hz`,
+    `Checkbox ${target.checked ? 'checked' : 'unchecked'} for ${frequency.toFixed(2)} Hz`,
   );
 
   // 合成波形を更新（音の再生とは独立して実行）
@@ -533,10 +556,10 @@ async function handleSineWaveCheckbox(event, frequency, amplitude, rawAmplitude,
   }, 10);
 
   try {
-    if (event.target.checked) {
+    if (target.checked) {
       const sineWavePlayer = await playSineWave(frequency, amplitude, rawAmplitude, phase);
       if (sineWavePlayer) {
-        event.target.sineWavePlayer = sineWavePlayer;
+        target.sineWavePlayer = sineWavePlayer;
         console.log(
           `Started sine wave: ${frequency.toFixed(2)} Hz, phase: ${phase.toFixed(3)} rad`,
         );
@@ -545,9 +568,9 @@ async function handleSineWaveCheckbox(event, frequency, amplitude, rawAmplitude,
         // チェックボックスの状態は維持（波形表示のため）
       }
     } else {
-      if (event.target.sineWavePlayer) {
-        event.target.sineWavePlayer.stop();
-        event.target.sineWavePlayer = null;
+      if (target.sineWavePlayer) {
+        target.sineWavePlayer.stop();
+        target.sineWavePlayer = null;
         console.log(`Stopped sine wave: ${frequency.toFixed(2)} Hz`);
       }
     }
@@ -558,15 +581,15 @@ async function handleSineWaveCheckbox(event, frequency, amplitude, rawAmplitude,
 }
 
 // 位相情報付きサイン波リストを表示する関数
-function displaySineWaves(sineWaves) {
-  const sineWavesList = document.getElementById('sine-waves-list');
+function displaySineWaves(sineWaves: FrequencyComponent[]): void {
+  const sineWavesList = document.getElementById('sine-waves-list')!;
   sineWavesList.innerHTML = '';
 
   // 音声再現実験の説明を追加
   const explanationItem = document.createElement('li');
   explanationItem.innerHTML = `
 		<div style="background-color: #e7f3ff; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
-			<strong>位相情報付き音声再現実験:</strong> 
+			<strong>位相情報付き音声再現実験:</strong>
 			各周波数成分の音量と位相が元音声と同じに設定されています。
 			「合成再生」ボタンで選択した成分を位相制御で合成再生できます。
 		</div>
@@ -605,29 +628,22 @@ function displaySineWaves(sineWaves) {
   sineWavesList.appendChild(synthesisControlItem);
 
   // 全て選択機能
-  document.getElementById('auto-select-btn').addEventListener('click', () => {
+  document.getElementById('auto-select-btn')!.addEventListener('click', () => {
     try {
       console.log('=== 全成分選択開始 ===');
 
       if (frequencyComponents.length === 0) {
-        if (typeof showStatusMessage === 'function') {
-          showStatusMessage(
-            '解析データがありません。先に周波解析ボタンを押してください。',
-            'error',
-          );
-        }
+        showStatusMessage('解析データがありません。先に周波解析ボタンを押してください。', 'error');
         return;
       }
 
       // 全てのチェックボックスを選択
       const checkboxes = sineWavesList.getElementsByTagName('input');
-      let selectedCount = 0;
 
       for (const checkbox of checkboxes) {
         if (checkbox.id.startsWith('sine-wave-')) {
           if (!checkbox.checked) {
             checkbox.checked = true;
-            selectedCount++;
             // changeイベントは発火させない（音が同時に鳴るのを避ける）
           }
         }
@@ -640,21 +656,17 @@ function displaySineWaves(sineWaves) {
         updateSynthesisWaveform();
       }, 50); // 少し遅延させてチェックボックスの状態更新を確実にする
 
-      if (typeof showStatusMessage === 'function') {
-        showStatusMessage(
-          `解析された全${frequencyComponents.length}個の成分を選択しました。「合成再生」を押してください。`,
-        );
-      }
+      showStatusMessage(
+        `解析された全${frequencyComponents.length}個の成分を選択しました。「合成再生」を押してください。`,
+      );
     } catch (error) {
       console.error('全選択でエラー:', error);
-      if (typeof showStatusMessage === 'function') {
-        showStatusMessage('全選択でエラーが発生しました: ' + error.message, 'error');
-      }
+      showStatusMessage('全選択でエラーが発生しました: ' + (error as Error).message, 'error');
     }
   });
 
   // 全て解除機能
-  document.getElementById('auto-deselect-btn').addEventListener('click', () => {
+  document.getElementById('auto-deselect-btn')!.addEventListener('click', () => {
     try {
       console.log('=== 全成分解除開始 ===');
 
@@ -680,24 +692,20 @@ function displaySineWaves(sineWaves) {
         updateSynthesisWaveform();
       }, 50);
 
-      if (typeof showStatusMessage === 'function') {
-        if (deselectedCount > 0) {
-          showStatusMessage(`${deselectedCount}個の成分を解除し、再生中のサイン波を停止しました。`);
-        } else {
-          showStatusMessage('解除する成分がありませんでした。');
-        }
+      if (deselectedCount > 0) {
+        showStatusMessage(`${deselectedCount}個の成分を解除し、再生中のサイン波を停止しました。`);
+      } else {
+        showStatusMessage('解除する成分がありませんでした。');
       }
     } catch (error) {
       console.error('全解除でエラー:', error);
-      if (typeof showStatusMessage === 'function') {
-        showStatusMessage('全解除でエラーが発生しました: ' + error.message, 'error');
-      }
+      showStatusMessage('全解除でエラーが発生しました: ' + (error as Error).message, 'error');
     }
   });
 
   // イベントリスナーを追加
-  document.getElementById('synthesize-btn').addEventListener('click', async () => {
-    const synthesizeBtn = document.getElementById('synthesize-btn');
+  document.getElementById('synthesize-btn')!.addEventListener('click', async () => {
+    const synthesizeBtn = document.getElementById('synthesize-btn')! as HTMLButtonElement;
     const originalText = synthesizeBtn.textContent;
 
     // ボタンを無効化してフィードバック
@@ -709,13 +717,11 @@ function displaySineWaves(sineWaves) {
       const buffer = await synthesizeSelectedComponents();
       if (buffer) {
         await playSynthesizedAudio();
-        document.getElementById('compare-btn').disabled = false;
+        (document.getElementById('compare-btn') as HTMLButtonElement).disabled = false;
       }
     } catch (error) {
       console.error('合成再生でエラー:', error);
-      if (typeof showStatusMessage === 'function') {
-        showStatusMessage('合成再生でエラーが発生しました: ' + error.message, 'error');
-      }
+      showStatusMessage('合成再生でエラーが発生しました: ' + (error as Error).message, 'error');
     } finally {
       // ボタンを元に戻す
       synthesizeBtn.disabled = false;
@@ -724,35 +730,29 @@ function displaySineWaves(sineWaves) {
     }
   });
 
-  document.getElementById('compare-btn').addEventListener('click', async () => {
+  document.getElementById('compare-btn')!.addEventListener('click', async () => {
     // 原音再生（比較用）
-    if (recordedChunks && recordedChunks.length > 0) {
+    if (state.recordedChunks && state.recordedChunks.length > 0) {
       try {
-        const buffer = await audioContext.decodeAudioData(await recordedChunks[0].arrayBuffer());
-        const source = audioContext.createBufferSource();
+        const buffer = await state.audioContext!.decodeAudioData(
+          await state.recordedChunks[0].arrayBuffer(),
+        );
+        const source = state.audioContext!.createBufferSource();
         source.buffer = buffer;
-        source.connect(audioContext.destination);
+        source.connect(state.audioContext!.destination);
         source.start();
 
-        if (typeof showStatusMessage === 'function') {
-          showStatusMessage('🎤 原音を再生中（合成音と比較してください）');
-        }
+        showStatusMessage('🎤 原音を再生中（合成音と比較してください）');
 
         source.onended = () => {
-          if (typeof showStatusMessage === 'function') {
-            showStatusMessage('原音の再生が完了しました。違いを確認できましたか？');
-          }
+          showStatusMessage('原音の再生が完了しました。違いを確認できましたか？');
         };
       } catch (error) {
         console.error('原音再生でエラー:', error);
-        if (typeof showStatusMessage === 'function') {
-          showStatusMessage('原音の再生でエラーが発生しました', 'error');
-        }
+        showStatusMessage('原音の再生でエラーが発生しました', 'error');
       }
     } else {
-      if (typeof showStatusMessage === 'function') {
-        showStatusMessage('原音データがありません。録音を行ってください。', 'error');
-      }
+      showStatusMessage('原音データがありません。録音を行ってください。', 'error');
     }
   });
 
@@ -842,16 +842,18 @@ function displaySineWaves(sineWaves) {
 }
 
 // 位相情報保持FFT解析
-async function analyseRecording() {
+async function analyseRecording(): Promise<number> {
   try {
     console.log('Starting phase-preserving audio analysis...');
 
-    if (!recordedChunks || recordedChunks.length === 0) {
+    if (!state.recordedChunks || state.recordedChunks.length === 0) {
       throw new Error('No recorded audio data available');
     }
 
     // 録音データをAudioBufferにデコード
-    const buffer = await audioContext.decodeAudioData(await recordedChunks[0].arrayBuffer());
+    const buffer = await state.audioContext!.decodeAudioData(
+      await state.recordedChunks[0].arrayBuffer(),
+    );
 
     console.log('Buffer info:', {
       duration: buffer.duration,
@@ -863,162 +865,10 @@ async function analyseRecording() {
     const channelData = buffer.getChannelData(0);
     const fftSize = 16384;
 
-    // 音声データの統計情報を計算
-    let maxAmplitude = 0;
-    let rmsAmplitude = 0;
-
-    for (let i = 0; i < channelData.length; i++) {
-      const val = Math.abs(channelData[i]);
-      if (val > maxAmplitude) maxAmplitude = val;
-      rmsAmplitude += val * val;
-    }
-    rmsAmplitude = Math.sqrt(rmsAmplitude / channelData.length);
-
-    console.log('Audio data statistics:', {
-      maxAmplitude,
-      rmsAmplitude,
-      totalSamples: channelData.length,
-    });
-
-    // 位相情報保持のための改善されたDFT実装
-    const windowSize = Math.min(fftSize, channelData.length);
-
-    // ハミング窓を適用
-    const window = new Float32Array(windowSize);
-    for (let i = 0; i < windowSize; i++) {
-      window[i] = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (windowSize - 1));
-    }
-
-    // 窓関数の正規化係数を計算
-    let windowSum = 0;
-    for (let i = 0; i < windowSize; i++) {
-      windowSum += window[i];
-    }
-    const windowNormalization = windowSize / windowSum;
-
-    // 位相情報付きDFT実行
-    const frequencyData = [];
-    maxAnalysisAmplitude = 0;
-
-    for (let k = 0; k < fftSize / 2; k++) {
-      let realSum = 0;
-      let imagSum = 0;
-
-      for (let n = 0; n < windowSize; n++) {
-        const angle = (-2 * Math.PI * k * n) / fftSize;
-        const windowedSample = channelData[n] * window[n];
-        realSum += windowedSample * Math.cos(angle);
-        imagSum += windowedSample * Math.sin(angle);
-      }
-
-      // 振幅と位相を計算
-      const magnitude = Math.sqrt(realSum * realSum + imagSum * imagSum);
-      const phase = Math.atan2(imagSum, realSum);
-      const amplitude = (magnitude * windowNormalization) / windowSize;
-
-      if (amplitude > maxAnalysisAmplitude) {
-        maxAnalysisAmplitude = amplitude;
-      }
-
-      frequencyData.push({
-        amplitude: amplitude,
-        phase: phase,
-        real: realSum,
-        imag: imagSum,
-      });
-    }
-
-    console.log('Phase-preserving FFT analysis completed');
-    console.log(`Maximum analysis amplitude: ${maxAnalysisAmplitude.toExponential(3)}`);
-    console.log(
-      'Sample phase data:',
-      frequencyData
-        .slice(1, 6)
-        .map((f) => `${f.amplitude.toExponential(2)} @ ${((f.phase * 180) / Math.PI).toFixed(1)}°`),
-    );
-
-    const sineWaves = [];
-    const sampleRate = audioContext.sampleRate;
-    const nyquistFreq = sampleRate / 2;
-
-    // 位相情報保持のための動的閾値
-    let avgFreqAmplitude = 0;
-    let nonZeroCount = 0;
-
-    for (let i = 1; i < frequencyData.length; i++) {
-      if (frequencyData[i].amplitude > 0) {
-        avgFreqAmplitude += frequencyData[i].amplitude;
-        nonZeroCount++;
-      }
-    }
-    avgFreqAmplitude = nonZeroCount > 0 ? avgFreqAmplitude / nonZeroCount : 0;
-
-    const dynamicThreshold = Math.max(
-      avgFreqAmplitude * 0.02,
-      maxAnalysisAmplitude * 0.001,
-      0.00000001,
-    );
-
-    console.log('Dynamic threshold for phase preservation:', dynamicThreshold.toExponential(3));
-
-    // 各周波数ビンを位相情報付きで分析
-    console.log(
-      `FFT解析詳細: サンプルレート=${sampleRate}Hz, FFTサイズ=${fftSize}, ナイキスト周波数=${nyquistFreq}Hz`,
-    );
-    console.log(`周波数分解能: ${sampleRate / fftSize}Hz, 解析範囲: 0-${nyquistFreq}Hz`);
-
-    for (let i = 1; i < frequencyData.length; i++) {
-      const frequency = (i * nyquistFreq) / (fftSize / 2);
-      const freqData = frequencyData[i];
-
-      // 不正な高周波成分の検出とログ出力
-      if (frequency > 5000 && freqData.amplitude > dynamicThreshold) {
-        console.warn(
-          `不正な高周波成分検出: ${frequency.toFixed(1)}Hz, 振幅=${freqData.amplitude.toExponential(3)}`,
-        );
-      }
-
-      // dB変換（表示用）
-      let amplitudeDB;
-      if (freqData.amplitude > 0) {
-        amplitudeDB = 20 * Math.log10(freqData.amplitude / maxAnalysisAmplitude);
-      } else {
-        amplitudeDB = -Infinity;
-      }
-
-      // 位相情報と振幅情報を保持（ただし人間の声の範囲内のみ）
-      if (
-        freqData.amplitude > dynamicThreshold &&
-        isFinite(amplitudeDB) &&
-        frequency <= nyquistFreq
-      ) {
-        // 人間の声の範囲外の高周波成分をフィルタリング
-        if (frequency > 8000) {
-          // 8kHz以上の成分に対して更に厳しい閾値を適用
-          const highFreqThreshold = dynamicThreshold * 10; // 10倍厳しい閾値
-          if (freqData.amplitude < highFreqThreshold) {
-            continue; // この成分をスキップ
-          }
-          console.log(`高周波成分保持: ${frequency.toFixed(1)}Hz (強い成分のため)`);
-        }
-
-        sineWaves.push({
-          frequency: frequency,
-          amplitude: amplitudeDB,
-          rawAmplitude: freqData.amplitude,
-          phase: freqData.phase, // 位相情報を保持
-        });
-      }
-    }
-
-    console.log('Sine waves found with phase information:', sineWaves.length, 'components');
-    console.log('First few components with phase:', sineWaves.slice(0, 5));
-
-    // 振幅順にソート
-    sineWaves.sort((a, b) => b.rawAmplitude - a.rawAmplitude);
-
-    // グローバル変数に保存（合成用）
-    frequencyComponents = sineWaves.slice(0, Math.min(100, sineWaves.length));
+    // 位相情報保持FFT解析（dsp.ts, M2-7 の golden-vector で保護された純粋関数）
+    const result = analyseFrequencyComponents(channelData, state.audioContext!.sampleRate, fftSize);
+    maxAnalysisAmplitude = result.maxAmplitude;
+    frequencyComponents = result.components;
 
     displaySineWaves(frequencyComponents);
 
@@ -1034,39 +884,33 @@ async function analyseRecording() {
   }
 }
 
-const analyseBtn = document.getElementById('analyse-btn');
-const sineWaveBtn = document.getElementById('sine-wave-btn');
+const analyseBtn = document.getElementById('analyse-btn') as HTMLButtonElement;
+const sineWaveBtn = document.getElementById('sine-wave-btn') as HTMLButtonElement;
 
 analyseBtn.addEventListener('click', async () => {
   try {
-    if (typeof showStatusMessage === 'function') {
-      showStatusMessage('位相情報保持で音声解析を開始しています...');
-    }
+    showStatusMessage('位相情報保持で音声解析を開始しています...');
 
     const componentCount = await analyseRecording();
-    document.getElementById('sine-waves').style.display = 'block';
+    document.getElementById('sine-waves')!.style.display = 'block';
     analyseBtn.disabled = true;
     sineWaveBtn.disabled = false;
     sineWaveBtn.style.fontWeight = 'bold';
 
-    if (typeof showStatusMessage === 'function') {
-      if (componentCount > 0) {
-        showStatusMessage(`解析完了！${componentCount}個の成分で位相情報付き音声再現が可能です。`);
-      } else {
-        showStatusMessage('解析完了。テスト用の固定周波数を使用できます。');
-      }
+    if (componentCount > 0) {
+      showStatusMessage(`解析完了！${componentCount}個の成分で位相情報付き音声再現が可能です。`);
+    } else {
+      showStatusMessage('解析完了。テスト用の固定周波数を使用できます。');
     }
   } catch (error) {
     console.error('Error in analyse button handler:', error);
-    if (typeof showStatusMessage === 'function') {
-      showStatusMessage('解析中にエラーが発生しました: ' + error.message, 'error');
-    }
+    showStatusMessage('解析中にエラーが発生しました: ' + (error as Error).message, 'error');
   }
 });
 
 sineWaveBtn.addEventListener('click', () => {
   try {
-    const sineWavesList = document.getElementById('sine-waves-list');
+    const sineWavesList = document.getElementById('sine-waves-list')!;
     const checkboxes = sineWavesList.getElementsByTagName('input');
 
     let stoppedCount = 0;
@@ -1079,9 +923,7 @@ sineWaveBtn.addEventListener('click', () => {
     }
     console.log(`Stopped ${stoppedCount} sine waves`);
 
-    if (typeof showStatusMessage === 'function') {
-      showStatusMessage(`${stoppedCount}個の正弦波を停止しました`);
-    }
+    showStatusMessage(`${stoppedCount}個の正弦波を停止しました`);
   } catch (error) {
     console.error('Error stopping sine waves:', error);
   }

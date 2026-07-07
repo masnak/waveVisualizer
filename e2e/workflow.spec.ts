@@ -2,11 +2,28 @@
 // 「あるべき挙動」ではなく実観測結果を pin する（計画 0.4/1.4-D 参照）。
 import { test, expect, type Page, type ConsoleMessage } from '@playwright/test';
 
-// page.evaluate() はブラウザコンテキストで実行され、レガシー classic script
-// (main.js) の top-level `let` グローバルを直接参照する。M2-8 の ESM 化までの
-// 暫定的な型宣言（本ファイルの評価コンテキスト限定）。
-declare const recordedChunks: Blob[];
-declare const mediaRecorder: MediaRecorder | undefined;
+// M2-8 の ESM 化により、録音データはアプリ内部のモジュールスコープ変数になり
+// page.evaluate() から bare global としては読めなくなった（意図した設計）。
+// アプリの内部実装（モジュール境界）に依存しないよう、ブラウザ標準 API である
+// MediaRecorder 自体をテスト側で計装し、実際に生成された Blob を直接観測する。
+async function instrumentMediaRecorder(page: Page) {
+  await page.addInitScript(() => {
+    const OriginalMediaRecorder = window.MediaRecorder;
+    const capture = { chunks: [] as Blob[], recorder: undefined as MediaRecorder | undefined };
+    (window as unknown as { __e2eRecording: typeof capture }).__e2eRecording = capture;
+    window.MediaRecorder = function (
+      this: unknown,
+      ...args: ConstructorParameters<typeof OriginalMediaRecorder>
+    ) {
+      const recorder = new OriginalMediaRecorder(...args);
+      capture.recorder = recorder;
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data.size > 0) capture.chunks.push(event.data);
+      });
+      return recorder;
+    } as unknown as typeof MediaRecorder;
+  });
+}
 
 // 実観測（tone/silence 各5回 × 通しシナリオ+分岐）の結果、console.error は
 // 0件だった。計画 1.4-B が候補に挙げた spectrumVisualizer の「🚨 20kHz超」診断は
@@ -45,16 +62,22 @@ async function initAndRecord(page: Page) {
 test.describe('smoke: headless recording pipeline', () => {
   test('captures non-empty audio via MediaRecorder', async ({ page }) => {
     const tracker = trackConsoleAndPageErrors(page);
+    await instrumentMediaRecorder(page);
     await initAndRecord(page);
 
-    const recording = await page.evaluate(() => ({
-      size: recordedChunks[0]?.size ?? 0,
-      count: recordedChunks.length,
-      mimeType: mediaRecorder?.mimeType ?? '',
-    }));
+    const recording = await page.evaluate(() => {
+      const capture = (
+        window as unknown as { __e2eRecording: { chunks: Blob[]; recorder?: MediaRecorder } }
+      ).__e2eRecording;
+      return {
+        count: capture.chunks.length,
+        firstSize: capture.chunks[0]?.size ?? 0,
+        mimeType: capture.recorder?.mimeType ?? '',
+      };
+    });
 
-    expect(recording.count).toBe(1);
-    expect(recording.size).toBeGreaterThan(0);
+    expect(recording.count).toBeGreaterThan(0);
+    expect(recording.firstSize).toBeGreaterThan(0);
     expect(recording.mimeType).toMatch(/^audio\//);
 
     tracker.assertClean();

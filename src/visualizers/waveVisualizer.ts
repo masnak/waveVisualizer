@@ -1,15 +1,20 @@
-// waveVisualizer.js
+// waveVisualizer.js から born-ESM へそのまま複製（M2-8）。挙動は完全に維持。
+export class WaveVisualizer {
+  analyser: AnalyserNode;
+  canvas: HTMLCanvasElement;
+  canvasContext: CanvasRenderingContext2D;
+  bufferLength: number;
+  dataArray: Uint8Array<ArrayBuffer>;
 
-class WaveVisualizer {
-  constructor(analyser, canvas) {
+  constructor(analyser: AnalyserNode, canvas: HTMLCanvasElement) {
     this.analyser = analyser;
     this.canvas = canvas;
-    this.canvasContext = this.canvas.getContext('2d');
+    this.canvasContext = this.canvas.getContext('2d')!;
     this.bufferLength = this.analyser.fftSize;
     this.dataArray = new Uint8Array(this.bufferLength);
   }
 
-  drawWaveform() {
+  drawWaveform(): void {
     this.analyser.getByteTimeDomainData(this.dataArray);
 
     // Set background to black
@@ -45,9 +50,3 @@ class WaveVisualizer {
     requestAnimationFrame(() => this.drawWaveform());
   }
 }
-
-// 以下のように、WaveVisualizer クラスを使用できます。
-// インスタンスを作成し、drawWaveform メソッドを呼び出すだけです。
-
-// const waveVisualizer = new WaveVisualizer(analyser, canvas);
-// waveVisualizer.drawWaveform();
