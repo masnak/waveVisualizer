@@ -11,7 +11,7 @@
 
 ## フェーズ進捗
 
-- M1: テスト基盤 [4/6 完了 + 2/6 ワークフロー作成済み・push 待ち] (67%〜100%) - [状態: 実装中断・ユーザー確認待ち]
+- M1: テスト基盤 [6/6] (100%) - [状態: ✅ 完了]
 - M2: リファクタ + TS 完全移行 [0/6] (0%) - [状態: 待機]
 
 ### M1: テスト基盤（自己完結マイルストーン）
@@ -20,10 +20,10 @@
 |---|---|---|---|
 | M1-1 | npm scaffold + Playwright + フィクスチャ 2 本（tone/silence）+ ignore 類（コード無変更） | ✅ 完了 | `npx playwright test --list` が通る（8 tests, exit 0）/ ローカル `playwright install chromium` 済み / フィクスチャ（16-bit PCM mono 48kHz、tone-440hz.wav・silence.wav）コミット済み |
 | M1-2 | 特性化 E2E（スモーク → 通し〔ラベル pin 含む〕→ ブランチ 2 本、python http.server 対象）+ data: favicon | ✅ 完了 | 録音→decode スモーク単独グリーン（blob size>0 / mimeType `audio/webm;codecs=opus` 確認）/ 5 回観測で ±5Hz 安定（実測 438.7Hz で固定）/ allowlist 実観測で確定（空配列、詳細は下記）/ silence で 0 件到達を確認 / tone・silence 両プロジェクト（計 8 テスト、うち条件外 3 は project 別 skip）5 回連続グリーン |
-| M1-3 | CI-smoke 前倒し（ubuntu-latest でスモークのみ、permissions: contents: read、timeout-minutes: 15） | 🟡 ワークフロー作成済み・push 待ち | `.github/workflows/ci-smoke.yml` 作成済み。Linux での実行確認・±5Hz 最終確定は push 後（ユーザー確認待ち、下記参照） |
+| M1-3 | CI-smoke 前倒し（ubuntu-latest でスモークのみ、permissions: contents: read、timeout-minutes: 15） | ✅ 完了 | GitHub Actions（run 28873891395）で**初回グリーン**（2 passed, 6.0s）。Linux 実行確認・±5Hz 許容の最終確定済み |
 | M1-4 | Vite 導入（classic 無変換配信を冒頭確認、tsconfig 2 分割、webServer 切替） | ✅ 完了 | E2E グリーン（spec 無修正・webServer コマンドのみ変更）/ 観測値・allowlist を Vite dev 配信下で 3 回再確認・変化なし / CLAUDE.md 起動コマンド更新 / README.md ローカル実行方法・claude.md 誤記も修正 |
 | M1-5 | Vitest + ESLint（flat・scope 分離）+ Prettier（一括整形は単独コミット） | ✅ 完了 | サンプルテスト（`src/sample.test.ts`）1 件グリーン / `lint`（レガシー JS 含め 0 warning）/ `format:check` / `typecheck` 全て通過。全ファイル一括整形（`npm run format`）実施後 E2E 再グリーン確認済み（挙動保存を実証） |
-| M1-6 | CI-full（最小 + retries + trace/screenshot + artifact upload） | 🟡 ワークフロー作成済み・push 待ち | `.github/workflows/ci.yml` 作成済み（typecheck→lint→format:check→test→test:e2e）。YAML 構文を python yaml でローカル検証済み。ローカルで CI と同じ手順を通しで実行し全グリーン確認済み。**GitHub Actions 上での実行確認は push 後**（下記参照） |
+| M1-6 | CI-full（最小 + retries + trace/screenshot + artifact upload） | ✅ 完了 | GitHub Actions（run 28873891839）で**初回グリーン**（typecheck/lint/format:check/test 全通過、E2E 5 passed・3 skipped, 22.1s）。**← M1 完了・価値確定点** |
 
 ### M2: リファクタ + TypeScript 完全移行
 
@@ -40,7 +40,7 @@
 
 ## 現在実行中
 
-M1-1・M1-2・M1-4・M1-5 完了。M1-3・M1-6 はワークフローファイル作成済みだが GitHub Actions 上での実行確認が未了（コミット・push が必要なため、ユーザーへの確認待ち。下記「次のアクション」参照）。
+**M1 完了**（M1-1〜M1-6 全ステップ、GitHub Actions 実行確認込み）。次は M2-7（dsp.ts 抽出 + golden-vector 固定）着手待ち。
 
 ---
 
@@ -74,11 +74,11 @@ M1-1・M1-2・M1-4・M1-5 完了。M1-3・M1-6 はワークフローファイル
   - 待機は全て状態ベース（`toBeEnabled`/`toBeVisible`/`toHaveText`/`toBeChecked` の自動リトライ）。固定 `waitForTimeout` は不使用
 - 検証: `npx playwright test --list` exit 0（8 tests）/ 全テストを **5 回連続実行**しオールグリーン（tone happy path は毎回約 9〜11s、silence 分岐は約 4〜5s）
 
-### M1-3: CI-smoke ワークフロー作成（2026-07-07・実行確認は push 待ち）
+### M1-3: CI-smoke ワークフロー作成 + Linux 実行確認（2026-07-07）
 
 - `.github/workflows/ci-smoke.yml` 作成: ubuntu-latest / permissions: contents: read / actions/checkout@v4 / actions/setup-node@v4（.nvmrc 参照 + cache: npm）/ npm ci / npx playwright install --with-deps chromium / timeout-minutes: 15 / スモークテストのみ --grep で絞り込み実行
 - YAML 構文を python3 の yaml モジュールでローカル検証（GitHub Actions 実行環境がないため構文チェックのみ）
-- 未検証事項: Linux（ubuntu-latest）上での実際のグリーン確認、および±5Hz 許容の最終確定（1.4-C）は、コミット・push して GitHub Actions を実際に走らせるまでできない。push はリポジトリの共有状態を変更する操作のため、ユーザー確認を経てから実施する
+- **push 後の実行結果（2026-07-07）**: GitHub Actions run [28873891395](https://github.com/masnak/waveVisualizer/actions/runs/28873891395) で**初回グリーン**（2 passed, 6.0s）。Linux（ubuntu-latest）でも `--autoplay-policy=no-user-gesture-required` フラグで headless 録音経路が問題なく動作することを確認。**±5Hz 許容の最終確定完了**（macOS ローカル観測値と Linux CI で乖離なし、許容幅の再ピンは不要）
 
 ### M1-4: Vite 導入（2026-07-07）
 
@@ -106,13 +106,13 @@ M1-1・M1-2・M1-4・M1-5 完了。M1-3・M1-6 はワークフローファイル
 - 全ファイル一括整形実施（npm run format）: index.html + レガシー 4 .js ファイル + 新規作成の e2e/workflow.spec.ts/eslint.config.js を整形（tab→2-space、シングルクォート統一等、フォーマットのみ・ロジック無変更）。整形直後に E2E を再実行し全グリーンを確認済み（挙動保存を実証）
 - 検証: npm test（sample 1 件グリーン）/ npm run lint（0 warning）/ npm run format:check（全ファイル準拠）/ npm run typecheck（エラーゼロ）/ npm run test:coverage（0% 表示、report-only として想定通り。src/audio 未作成のため対象ファイルなし）
 
-### M1-6: CI-full ワークフロー作成（2026-07-07・実行確認は push 待ち）
+### M1-6: CI-full ワークフロー作成 + Linux 実行確認（2026-07-07）
 
 - .github/workflows/ci.yml 作成: push(main)/pull_request トリガ、permissions: contents: read、単一ジョブで typecheck→lint→format:check→test→test:e2e を順次実行。失敗時 playwright-report/・test-results/ を actions/upload-artifact@v4 でアップロード
 - retries（CI ? 2 : 0）・trace/screenshot 設定は M1-1 で playwright.config.ts に組み込み済みのため追加変更不要
 - 計画通り「入れないもの」を未導入のまま維持: Playwright ブラウザバイナリキャッシュ / concurrency キャンセル / coverage ゲート
 - ローカルで CI と同一の手順を通しで実行（typecheck && lint && format:check && test && test:e2e）し全グリーンを確認
-- 未検証事項: GitHub Actions 上での実際のグリーン確認は push 後（M1-3 と同様、ユーザー確認待ち）
+- **push 後の実行結果（2026-07-07）**: GitHub Actions run [28873891839](https://github.com/masnak/waveVisualizer/actions/runs/28873891839) で**初回グリーン**（typecheck/lint/format:check/test 全通過、test:e2e は 5 passed・3 skipped, 22.1s）。**M1 完了・価値確定点に到達**
 
 ---
 
@@ -120,13 +120,13 @@ M1-1・M1-2・M1-4・M1-5 完了。M1-3・M1-6 はワークフローファイル
 
 ### M1 完了基準
 
-- [ ] 特性化 E2E（スモーク + 通し + ブランチ 2 本、tone / silence 両プロジェクト）が現行挙動のままグリーン
-- [ ] 未捕捉例外ゼロ・console.error（厳密 allowlist 除外後）ゼロ
-- [ ] 上位成分の周波数（±5Hz、初回 CI で最終確定）+ 相対音量が pin 済み
-- [ ] `npm run dev` で起動し、主要ワークフロー（初期化 → 録音 → 周波解析 → 成分選択 → 合成再生 → 原音比較）が手動でも通る
-- [ ] `lint` / `format:check` / `typecheck` / `test`（サンプル）が通る
-- [ ] GitHub Actions（CI-smoke → CI-full）が push / PR で全チェックグリーン
-- [ ] CLAUDE.md の起動コマンドが実態と一致。README.md のローカル実行方法も `npm run dev` に更新済み（M1-4）
+- [x] 特性化 E2E（スモーク + 通し + ブランチ 2 本、tone / silence 両プロジェクト）が現行挙動のままグリーン
+- [x] 未捕捉例外ゼロ・console.error（厳密 allowlist 除外後）ゼロ
+- [x] 上位成分の周波数（±5Hz、初回 CI で最終確定）+ 相対音量が pin 済み（Linux CI run 28873891839 で最終確定）
+- [x] `npm run dev` で起動し、主要ワークフロー（初期化 → 録音 → 周波解析 → 成分選択 → 合成再生 → 原音比較）が手動でも通る（headed Playwright + fake-device flags でスクリーンショット付き確認済み。実マイクが使えない自動化環境のため、CLAUDE.md 既定のフェイクデバイス方式を「手動確認」の代替手段として採用）
+- [x] `lint` / `format:check` / `typecheck` / `test`（サンプル）が通る
+- [x] GitHub Actions（CI-smoke → CI-full）が push / PR で全チェックグリーン（run 28873891395 / 28873891839、共に初回グリーン）
+- [x] CLAUDE.md の起動コマンドが実態と一致。README.md のローカル実行方法も `npm run dev` に更新済み（M1-4）
 
 ### M2 完了基準
 
@@ -144,22 +144,22 @@ M1-1・M1-2・M1-4・M1-5 完了。M1-3・M1-6 はワークフローファイル
 
 ## 品質保証チェックリスト
 
-### コード品質
+### コード品質（M1 時点）
 
-- [ ] コンソールエラーなし（計画 1.4-B の定義: pageerror ゼロ + 厳密 allowlist 除外後 console.error ゼロ）
-- [ ] Prettier / ESLint 通過（M1-5 以降）
-- [ ] 整形コミットとロジック変更コミットが分離されている
+- [x] コンソールエラーなし（計画 1.4-B の定義: pageerror ゼロ + 厳密 allowlist 除外後 console.error ゼロ）
+- [x] Prettier / ESLint 通過（M1-5 以降）
+- [x] 整形コミットとロジック変更コミットが分離されている（`3a88c32` が整形専用コミット）
 
-### 動作品質
+### 動作品質（M1 時点）
 
-- [ ] 主要ワークフローがブラウザで通る（各ステップの完了ゲート）
-- [ ] 挙動保存: 既存バグは修正せず記録のみ（許容される挙動変更は計画 0.5 の例外①〜③のみ）
+- [x] 主要ワークフローがブラウザで通る（各ステップの完了ゲート。headed Playwright + スクリーンショットで確認）
+- [x] 挙動保存: 既存バグは修正せず記録のみ（許容される挙動変更は計画 0.5 の例外①③のみ実施。②の rAF start/stop 化は M2-11 で実施予定）
 
-### 記録品質
+### 記録品質（M1 時点）
 
-- [ ] 主要成果物・発生した問題と解決策を記録
-- [ ] 証跡リンク（commit/PR）を記録
-- [ ] 次作業への影響・注意事項を記録
+- [x] 主要成果物・発生した問題と解決策を記録
+- [x] 証跡リンク（commit/PR）を記録（コミットハッシュ・GitHub Actions run URL を本ファイルに記載済み）
+- [x] 次作業への影響・注意事項を記録（M2-7 着手時の scaffold テスト削除、既知バグ一覧等）
 
 ---
 
@@ -201,10 +201,19 @@ M1-1・M1-2・M1-4・M1-5 完了。M1-3・M1-6 はワークフローファイル
 
 ---
 
-## 次のアクション（ユーザー確認待ち）
+## コミット履歴（M1）
 
-M1-1・M1-2・M1-4・M1-5 はローカル完結で完了済み。M1-3（CI-smoke）・M1-6（CI-full）はワークフロー定義をローカルで作成・YAML 構文検証・ローカル同等手順の通し実行まで完了しているが、**GitHub Actions 上での実際のグリーン確認にはコミット・push が必要**（リポジトリはローカルで origin/main より 10+ コミット先行、未 push）。push はリポジトリの共有状態を変更し、GitHub Pages ライブデモ（現状 `main.js` 等 classic script 直参照のレガシー配信）にも影響しうる操作のため、実行前にユーザーへ確認する。**現時点では index.html/main.js 等はまだ `src/` へ移動しておらず（M2-8 で実施予定）、classic script 直参照のままなので、ここで push してもレガシー Pages 配信は壊れない**（壊れるのは M2-8 のタイミング）。
+1. `aa38fae` Add TypeScript/TDD test infrastructure scaffold（M1-1, M1-3〜M1-6 設定ファイル）
+2. `4f5cb34` Add characterization E2E tests + favicon（M1-2）
+3. `3a88c32` Reformat with Prettier（M1-5、整形専用）
+4. `8865401` Update CLAUDE.md/README.md for Vite dev server（M1-4）
+5. `6a0df95` Add TS+TDD test infra plan, review, and progress log
+6. push 後: GitHub Actions run [28873891395](https://github.com/masnak/waveVisualizer/actions/runs/28873891395)（CI Smoke, success）/ [28873891839](https://github.com/masnak/waveVisualizer/actions/runs/28873891839)（CI, success）
+
+## 次のアクション
+
+**M1 完了**（全チェックリスト・GitHub Actions 実行確認込み）。次は M2-7（dsp.ts 抽出 + golden-vector 固定）から着手。M2-8（ESM 化 + `src/` 物理移動 + GitHub Pages デプロイ移行）は現行のレガシー Pages 配信（`source: main:/`）を破壊しうる atomic 作業のため、着手前に改めてユーザー確認を挟む想定（計画 1.4-G 参照）。
 
 ## 最終更新
 
-**最終更新:** 2026-07-07（M1-1・M1-2・M1-4・M1-5 実装完了、M1-3・M1-6 はワークフロー作成済み・push 待ちで一時中断）
+**最終更新:** 2026-07-07（**M1 全ステップ完了**。GitHub Actions CI-smoke/CI-full 共に push 後初回グリーン。次は M2-7 着手待ち）
