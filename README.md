@@ -154,28 +154,23 @@ waveVisualizer/
 ├── spectrumVisualizer.js   # リアルタイムスペクトラム表示
 ├── sinewaveAnalyser.js     # 位相情報保持FFT・音声合成
 ├── README.md               # このファイル
-└── claude.md               # 詳細技術ドキュメント
+└── CLAUDE.md               # 詳細技術ドキュメント
 ```
 
 ## 🖥 ローカル実行方法
-
-### Python 使用（推奨）
 
 ```bash
 # プロジェクトディレクトリに移動
 cd waveVisualizer
 
-# ローカルサーバー起動
-python3 -m http.server 8000
+# 依存関係インストール（初回のみ）
+npm ci
+
+# Vite dev server 起動
+npm run dev
 
 # ブラウザでアクセス
 open http://localhost:8000
-```
-
-### Node.js 使用
-
-```bash
-npx http-server -p 8000
 ```
 
 ## 🔧 トラブルシューティング

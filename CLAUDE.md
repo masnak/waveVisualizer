@@ -17,21 +17,30 @@
 
 ### 起動
 
-ビルド不要の静的アプリ。`file://` ではマイク権限（getUserMedia）が取得できないため、必ず localhost で配信する。
+`file://` ではマイク権限（getUserMedia）が取得できないため、必ず localhost で配信する。Vite dev server を使用（TS+TDD テスト基盤導入により `python3 -m http.server` から移行済み。`.ai-workspace/20260707-001-ts-tdd-test-infra-plan.md` 参照）。
 
 ```bash
-python3 -m http.server 8000    # → http://localhost:8000 で開く
+npm ci                # 初回のみ
+npm run dev           # → http://localhost:8000 で開く
 ```
+
+主要 npm scripts: `dev` / `build` / `preview` / `test`（Vitest, 導入後）/ `test:e2e`（Playwright）/ `typecheck`（tsc --noEmit）/ `lint` / `format`（導入後）
 
 ### ブラウザ自動検証
 
-マイク入力が必須のため、自動検証には Chromium のフェイクデバイスフラグを使う（許可ダイアログなしで擬似マイク入力が流れる）:
+マイク入力が必須のため、自動検証には Chromium のフェイクデバイスフラグを使う（許可ダイアログなしで擬似マイク入力が流れる）。Playwright E2E（`e2e/workflow.spec.ts`）が `playwright.config.ts` でこれを自動設定済み:
 
 ```
---use-fake-device-for-media-stream --use-fake-ui-for-media-stream
+--use-fake-device-for-media-stream --use-fake-ui-for-media-stream --use-file-for-fake-audio-capture=<wav> --autoplay-policy=no-user-gesture-required
 ```
 
-検証ループ: 変更 → localhost 起動 → 「初期化」→「録音開始」→「周波解析」→ 成分選択 →「合成再生」をブラウザで通し、コンソールエラーがないことを確認する。
+`--autoplay-policy=no-user-gesture-required` は必須（無いと headless で AudioContext が `running` に遷移せず初期化がハングする）。
+
+```bash
+npm run test:e2e       # 特性化 E2E（tone / silence 2 プロジェクト）を実行
+```
+
+手動でブラウザ確認する場合の検証ループ: 変更 → `npm run dev` 起動 → 「初期化」→「録音開始」→「周波解析」→ 成分選択 →「合成再生」をブラウザで通し、コンソールエラーがないことを確認する。
 
 ### エージェント運用ルール
 
