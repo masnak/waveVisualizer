@@ -14,3 +14,12 @@ export interface AnalysisResult {
   components: FrequencyComponent[];
   maxAmplitude: number;
 }
+
+/** 音声合成計算に必要な最小限のフィールド（M2-10、audio/synthesis.ts で使用） */
+export type SynthesisComponent = Pick<FrequencyComponent, 'frequency' | 'rawAmplitude' | 'phase'>;
+
+/** チェックボックスの選択状態（DOM 要素ではなくプレーンデータ、計画 1.2） */
+export interface CheckboxState {
+  id: string;
+  checked: boolean;
+}

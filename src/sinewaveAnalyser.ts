@@ -6,7 +6,25 @@
 import { state } from './state.js';
 import { showStatusMessage } from './ui/status.js';
 import { analyseFrequencyComponents } from './audio/dsp.js';
-import type { FrequencyComponent } from './types.js';
+import { renderSineSamples } from './audio/signal.js';
+import {
+  calculateDisplaySynthesisWaveform,
+  collectSelectedComponents,
+  synthesizeAudioSamples,
+} from './audio/synthesis.js';
+import type { CheckboxState, FrequencyComponent } from './types.js';
+
+// 選択状態の読み取りシム（計画 1.4-A 点4: 「読み取りシムで境界を1箇所に固定」）。
+// .checked は DOM 所有のままとし、純粋関数 collectSelectedComponents への
+// 唯一の橋渡しをここに集約する。
+function readCheckboxStates(): CheckboxState[] {
+  const sineWavesList = document.getElementById('sine-waves-list')!;
+  const checkboxes = sineWavesList.getElementsByTagName('input');
+  return Array.from(checkboxes).map((checkbox) => ({
+    id: checkbox.id,
+    checked: checkbox.checked,
+  }));
+}
 
 // グローバル変数：解析結果の最大振幅を保存（相対音量計算用）
 let maxAnalysisAmplitude = 0;
@@ -59,11 +77,8 @@ async function playSineWave(
       gainValue = 0.05;
     }
 
-    // 位相を考慮した正弦波を生成
-    for (let i = 0; i < length; i++) {
-      const time = i / sampleRate;
-      data[i] = gainValue * Math.sin(2 * Math.PI * frequency * time + phase);
-    }
+    // 位相を考慮した正弦波を生成（audio/signal.ts, M2-10）
+    data.set(renderSineSamples(length, sampleRate, frequency, gainValue, phase));
 
     // AudioBufferSourceNodeで再生
     const source = state.audioContext!.createBufferSource();
@@ -108,32 +123,13 @@ async function synthesizeSelectedComponents(): Promise<AudioBuffer | null> {
   try {
     console.log('=== 位相制御音声合成開始 ===');
 
-    // チェックされた成分を取得
-    const sineWavesList = document.getElementById('sine-waves-list')!;
-    const checkboxes = sineWavesList.getElementsByTagName('input');
-    const selectedComponents: (FrequencyComponent & { originalIndex: number })[] = [];
-
-    console.log(`チェックボックス総数: ${checkboxes.length}`);
-
-    for (let i = 0; i < checkboxes.length; i++) {
-      const checkbox = checkboxes[i];
-      console.log(`チェックボックス ${i}: ID=${checkbox.id}, checked=${checkbox.checked}`);
-
-      if (checkbox.checked && checkbox.id.startsWith('sine-wave-')) {
-        const index = parseInt(checkbox.id.replace('sine-wave-', ''));
-        console.log(`選択された成分インデックス: ${index}`);
-
-        if (frequencyComponents[index]) {
-          selectedComponents.push({
-            ...frequencyComponents[index],
-            originalIndex: index,
-          });
-          console.log(
-            `成分追加: ${frequencyComponents[index].frequency.toFixed(1)} Hz, 位相: ${((frequencyComponents[index].phase * 180) / Math.PI).toFixed(1)}°`,
-          );
-        }
-      }
-    }
+    // チェックされた成分を取得（音声パス: includeTestWaves=false、既存の非対称を保存）
+    const selectedComponents = collectSelectedComponents(
+      readCheckboxStates(),
+      frequencyComponents,
+      maxAnalysisAmplitude,
+      false,
+    );
 
     if (selectedComponents.length === 0) {
       console.warn('合成用の成分が選択されていません');
@@ -143,132 +139,31 @@ async function synthesizeSelectedComponents(): Promise<AudioBuffer | null> {
 
     console.log(`=== ${selectedComponents.length}個の成分で音声合成を実行 ===`);
 
-    // 選択された成分の詳細情報を表示
-    selectedComponents.forEach((comp, idx) => {
-      const relativeAmp = comp.rawAmplitude / maxAnalysisAmplitude;
-      console.log(
-        `成分 ${idx + 1}: ${comp.frequency.toFixed(1)} Hz - 相対振幅: ${relativeAmp.toFixed(4)} - 位相: ${((comp.phase * 180) / Math.PI).toFixed(1)}°`,
-      );
-    });
-
     // 元録音と同じ長さのバッファを作成
     const duration = 2; // 元録音と同じ2秒
     const sampleRate = state.audioContext!.sampleRate;
     const length = Math.floor(duration * sampleRate);
     const buffer = state.audioContext!.createBuffer(1, length, sampleRate);
-    const data = buffer.getChannelData(0);
 
     console.log(`合成音声バッファ作成: ${duration}秒, ${sampleRate}Hz, ${length}サンプル`);
 
-    // バッファを初期化
-    for (let i = 0; i < length; i++) {
-      data[i] = 0;
-    }
+    // 音声パス（audio/synthesis.ts, M2-10）: 加算合成 + 適応的正規化
+    const samples = synthesizeAudioSamples(
+      selectedComponents,
+      sampleRate,
+      duration,
+      maxAnalysisAmplitude,
+    );
+    buffer.getChannelData(0).set(samples);
 
-    // 各選択成分を位相情報付きで加算合成
-    selectedComponents.forEach((comp, idx) => {
-      console.log(`\n--- 成分 ${idx + 1} の合成処理開始 ---`);
-      console.log(`周波数: ${comp.frequency.toFixed(2)} Hz`);
-      console.log(
-        `位相: ${comp.phase.toFixed(4)} ラジアン (${((comp.phase * 180) / Math.PI).toFixed(2)}°)`,
-      );
-      console.log(`生振幅: ${comp.rawAmplitude.toExponential(4)}`);
-
-      // 人間の声再現用に音量を調整
-      const relativeAmplitude = comp.rawAmplitude / maxAnalysisAmplitude;
-
-      // 人間の声に適した音量設定
-      let baseGainLevel: number;
-      if (relativeAmplitude > 0.5) {
-        baseGainLevel = 0.4; // 主要成分
-      } else if (relativeAmplitude > 0.1) {
-        baseGainLevel = 0.3; // 重要成分
-      } else {
-        baseGainLevel = 0.2; // 補助成分
-      }
-
-      let gainValue = relativeAmplitude * baseGainLevel;
-
-      // 音量の下限と上限を設定
-      gainValue = Math.max(gainValue, 0.002); // 最小音量を上げる
-      gainValue = Math.min(gainValue, 0.6); // 最大音量を上げる
-
-      console.log(`相対振幅: ${relativeAmplitude.toFixed(4)}`);
-      console.log(`最終ゲイン: ${gainValue.toFixed(6)}`);
-
-      // 位相制御された正弦波を生成して加算
-      let addedSampleCount = 0;
-      let maxAddedValue = 0;
-
-      for (let i = 0; i < length; i++) {
-        const time = i / sampleRate;
-        const sampleValue = gainValue * Math.sin(2 * Math.PI * comp.frequency * time + comp.phase);
-        data[i] += sampleValue;
-
-        if (Math.abs(sampleValue) > maxAddedValue) {
-          maxAddedValue = Math.abs(sampleValue);
-        }
-        addedSampleCount++;
-      }
-
-      console.log(`追加したサンプル数: ${addedSampleCount}`);
-      console.log(`この成分の最大振幅: ${maxAddedValue.toFixed(6)}`);
-    });
-
-    console.log('\n=== 合成後の波形解析 ===');
-
-    // 合成後の波形統計
-    let maxSample = 0;
-    let minSample = 0;
-    let rmsSum = 0;
-
-    for (let i = 0; i < length; i++) {
-      const sample = data[i];
-      if (sample > maxSample) maxSample = sample;
-      if (sample < minSample) minSample = sample;
-      rmsSum += sample * sample;
-    }
-
-    const rmsLevel = Math.sqrt(rmsSum / length);
-    console.log(`合成波形の最大値: ${maxSample.toFixed(6)}`);
-    console.log(`合成波形の最小値: ${minSample.toFixed(6)}`);
-    console.log(`合成波形のRMS: ${rmsLevel.toFixed(6)}`);
-
-    // 適応的正規化（人間の声に適した音量に調整）
-    let normalizationFactor = 1.0;
-    const targetRMS = 0.1; // 目標RMS レベル
-
-    if (rmsLevel > 0) {
-      if (maxSample > 0.8) {
-        // クリッピング防止
-        normalizationFactor = 0.8 / Math.max(Math.abs(maxSample), Math.abs(minSample));
-        console.log(`クリッピング防止による正規化: ${normalizationFactor.toFixed(4)}`);
-      } else if (rmsLevel < targetRMS * 0.1) {
-        // 音量が小さすぎる場合の増幅
-        normalizationFactor = targetRMS / rmsLevel;
-        normalizationFactor = Math.min(normalizationFactor, 5.0); // 最大5倍まで
-        console.log(`音量増幅による正規化: ${normalizationFactor.toFixed(4)}`);
-      }
-    }
-
-    // 正規化を適用
-    if (normalizationFactor !== 1.0) {
-      for (let i = 0; i < length; i++) {
-        data[i] *= normalizationFactor;
-      }
-      console.log(`正規化適用完了。係数: ${normalizationFactor.toFixed(4)}`);
-    }
-
-    // 最終的な音量確認
     let finalMax = 0;
     let finalRMS = 0;
-    for (let i = 0; i < length; i++) {
-      const sample = Math.abs(data[i]);
+    for (let i = 0; i < samples.length; i++) {
+      const sample = Math.abs(samples[i]);
       if (sample > finalMax) finalMax = sample;
-      finalRMS += data[i] * data[i];
+      finalRMS += samples[i] * samples[i];
     }
-    finalRMS = Math.sqrt(finalRMS / length);
-
+    finalRMS = Math.sqrt(finalRMS / samples.length);
     console.log(`最終波形の最大振幅: ${finalMax.toFixed(6)}`);
     console.log(`最終波形のRMS: ${finalRMS.toFixed(6)}`);
 
@@ -335,38 +230,13 @@ function calculateSynthesisWaveform(): Float32Array {
       return new Float32Array(0);
     }
 
-    const checkboxes = sineWavesList.getElementsByTagName('input');
-    const selectedComponents: { frequency: number; rawAmplitude: number; phase: number }[] = [];
-
-    console.log(`チェックボックス数: ${checkboxes.length}`);
-
-    // チェックされた成分を収集
-    for (let i = 0; i < checkboxes.length; i++) {
-      const checkbox = checkboxes[i];
-      if (checkbox.checked && checkbox.id.startsWith('sine-wave-')) {
-        const index = parseInt(checkbox.id.replace('sine-wave-', ''));
-        if (frequencyComponents[index]) {
-          selectedComponents.push(frequencyComponents[index]);
-          console.log(`選択された成分: ${frequencyComponents[index].frequency.toFixed(1)}Hz`);
-        }
-      } else if (checkbox.checked && checkbox.id.startsWith('test-wave-')) {
-        // テスト用成分の処理
-        const index = parseInt(checkbox.id.replace('test-wave-', ''));
-        const testFrequencies = [
-          { frequency: 440, rawAmplitude: (maxAnalysisAmplitude || 0.1) * 1.0, phase: 0 },
-          { frequency: 880, rawAmplitude: (maxAnalysisAmplitude || 0.1) * 0.5, phase: Math.PI / 4 },
-          {
-            frequency: 1320,
-            rawAmplitude: (maxAnalysisAmplitude || 0.1) * 0.25,
-            phase: Math.PI / 2,
-          },
-        ];
-        if (testFrequencies[index]) {
-          selectedComponents.push(testFrequencies[index]);
-          console.log(`選択されたテスト成分: ${testFrequencies[index].frequency.toFixed(1)}Hz`);
-        }
-      }
-    }
+    // チェックされた成分を収集（表示パス: includeTestWaves=true、既存の非対称を保存）
+    const selectedComponents = collectSelectedComponents(
+      readCheckboxStates(),
+      frequencyComponents,
+      maxAnalysisAmplitude,
+      true,
+    );
 
     console.log(`選択された成分数: ${selectedComponents.length}`);
 
@@ -375,74 +245,11 @@ function calculateSynthesisWaveform(): Float32Array {
       return new Float32Array(0);
     }
 
-    // 合成波形計算
-    const sampleRate = 44100;
-    const displayDuration = 0.2; // 200ms分の波形を表示
-    const prepareDuration = 0.1; // 100ms分の準備時間（定常状態確保のため）
-    const totalDuration = displayDuration + prepareDuration;
-    const totalLength = Math.floor(sampleRate * totalDuration);
-    const displayLength = Math.floor(sampleRate * displayDuration);
-    const prepareLength = Math.floor(sampleRate * prepareDuration);
-
-    const fullSynthesisData = new Float32Array(totalLength);
+    // 表示パス（audio/synthesis.ts, M2-10）
+    const synthesisData = calculateDisplaySynthesisWaveform(selectedComponents);
 
     console.log(
-      `波形計算パラメータ: 表示=${displayLength}サンプル, 準備=${prepareLength}サンプル, 合計=${totalLength}サンプル`,
-    );
-
-    // 振幅のスケーリング（相対振幅を使用）
-    const amplitudeScale = 1000; // rawAmplitudeを増幅
-
-    // 各成分を加算（デバッグ情報付き）
-    for (const comp of selectedComponents) {
-      const frequency = comp.frequency;
-      const rawAmp = comp.rawAmplitude || 0;
-      const amplitude = rawAmp * amplitudeScale; // スケーリング適用
-      const phase = comp.phase || 0;
-
-      console.log(
-        `成分追加: ${frequency.toFixed(1)}Hz, 生振幅=${rawAmp.toExponential(3)}, スケール振幅=${amplitude.toFixed(6)}, 位相=${((phase * 180) / Math.PI).toFixed(1)}°`,
-      );
-
-      for (let i = 0; i < totalLength; i++) {
-        const time = i / sampleRate;
-        const sineValue = amplitude * Math.sin(2 * Math.PI * frequency * time + phase);
-        fullSynthesisData[i] += sineValue;
-      }
-    }
-
-    // 定常状態部分（準備時間後）を表示用データとして抽出
-    const synthesisData = new Float32Array(displayLength);
-    for (let i = 0; i < displayLength; i++) {
-      synthesisData[i] = fullSynthesisData[prepareLength + i];
-    }
-
-    // 実際の最大振幅を計算
-    let actualMax = 0;
-    let actualMin = 0;
-    for (let i = 0; i < displayLength; i++) {
-      if (synthesisData[i] > actualMax) actualMax = synthesisData[i];
-      if (synthesisData[i] < actualMin) actualMin = synthesisData[i];
-    }
-
-    const actualRange = Math.max(Math.abs(actualMax), Math.abs(actualMin));
-    console.log(
-      `実際の波形範囲: 最大=${actualMax.toFixed(6)}, 最小=${actualMin.toFixed(6)}, 範囲=${actualRange.toFixed(6)}`,
-    );
-
-    // 実際の振幅に基づいて正規化
-    if (actualRange > 0) {
-      const normalizeByActual = 0.8; // クリッピング防止
-      for (let i = 0; i < displayLength; i++) {
-        synthesisData[i] = (synthesisData[i] / actualRange) * normalizeByActual;
-      }
-      console.log(`正規化完了: 係数=${(normalizeByActual / actualRange).toExponential(3)}`);
-    } else {
-      console.warn('波形範囲が0です - 全て0の値');
-    }
-
-    console.log(
-      `合成波形計算完了: ${selectedComponents.length}成分, ${displayLength}サンプル（定常状態部分を表示）`,
+      `合成波形計算完了: ${selectedComponents.length}成分, ${synthesisData.length}サンプル（定常状態部分を表示）`,
     );
     return synthesisData;
   } catch (error) {

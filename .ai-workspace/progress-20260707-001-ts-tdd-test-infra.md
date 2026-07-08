@@ -12,7 +12,7 @@
 ## フェーズ進捗
 
 - M1: テスト基盤 [6/6] (100%) - [状態: ✅ 完了]
-- M2: リファクタ + TS 完全移行 [3/6] (50%) - [状態: 実装中]
+- M2: リファクタ + TS 完全移行 [4/6] (67%) - [状態: 実装中]
 
 ### M1: テスト基盤（自己完結マイルストーン）
 
@@ -32,7 +32,7 @@
 | M2-7 | dsp.ts 抽出 + golden-vector 固定（born-ESM 独立モジュール、アプリ未接続） | ✅ 完了 | golden（frequency/rawAmplitude/phase/amplitudeDB/maxAmplitude、rel 1e-6）+ 解析的期待値 + 8kHz 境界、計 11 テストグリーン。coverage 98.73% stmts / 87.5% branches（report-only） |
 | M2-8 | state 設計 + ESM 化（window ブリッジ、葉→根、src/ 移設、dsp.ts 差し替え、audioContext は移行期 state 方式）+ GitHub Pages デプロイ移行（1.4-G、src/ 移設と atomic） | ✅ 完了 | 4 ファイル ESM 化・E2E 5 回連続グリーン・`vite build` 成功・GitHub Actions 3 ワークフロー（CI/CI Smoke/Deploy to GitHub Pages）全て初回グリーン・**ライブ URL（masnak.github.io/waveVisualizer）で初期化→録音→解析→合成再生の通しを実機確認済み（スクリーンショット証跡あり）**。**計画からの変更点**: CI E2E の build+preview 対象切替は `vite preview` の既知の不具合により断念（詳細下記） |
 | M2-9 | init() 集約（両ファイル、readyState ガード、ポーリング timeout=resolve） | ✅ 完了 | E2E 3 回連続グリーン（計 10 テスト）/ resume 経路の手動確認 1 回実施（盲点-1 を再確認、詳細下記） |
-| M2-10 | synthesis.ts / signal.ts / collectSelectedComponents（includeTestWaves パラメータ化）抽出 | ⬜ 未着手 | ユニット + E2E グリーン |
+| M2-10 | synthesis.ts / signal.ts / collectSelectedComponents（includeTestWaves パラメータ化）抽出 | ✅ 完了 | ユニット 32 テスト（dsp 11 + signal 4 + synthesis 17）+ E2E 3 回連続グリーン。coverage: dsp.ts 98.73% / synthesis.ts 98.88%（stmts） |
 | M2-11 | 全 .ts 化 + allowJs off + rAF start/stop（設計改善と分類）+ Map 化 + AppContext 収斂 | ⬜ 未着手 | `tsc --noEmit`（strict, allowJs off）ゼロ / ブリッジ・state.audioContext 全廃 / ユニット + E2E グリーン |
 | M2-12 | 最終ドキュメント同期 + coverage 参考値・既存バグ / E2E 盲点一覧の記録 | ⬜ 未着手 | CLAUDE.md/README のコマンドが実際に動く |
 
@@ -40,7 +40,7 @@
 
 ## 現在実行中
 
-**M1 完了。M2-7・M2-8・M2-9 完了**（GitHub Pages は GitHub Actions デプロイへ移行済み、record-btn 競合状態バグも修正済み）。次は M2-10（synthesis.ts/signal.ts 抽出）着手待ち。
+**M1 完了。M2-7・M2-8・M2-9・M2-10 完了**（GitHub Pages は GitHub Actions デプロイへ移行済み、record-btn 競合状態バグも修正済み）。次は M2-11（全 .ts 化 + allowJs off + 仕上げ）着手待ち。
 
 ---
 
@@ -195,6 +195,20 @@ M2-9 着手前に、ユーザーから実機（ライブサイト + ローカル
 - `initializeAudioAndVisualizer()` 内の audioContext 待ちポーリングに **5000ms のタイムアウトを追加**（計画 0.5 例外①: timeout 時は現行の続行と等価に `resolve`、`reject` にはしない）。通常フローでは即座に 'running' になるため到達しない防御的変更
 - **resume 経路の手動確認**（計画 1.4-D 盲点-1 対応）: `--autoplay-policy=no-user-gesture-required` フラグを意図的に外した状態で init-btn クリック（real user gesture 相当）から通しを実行。**結果**: 847ms で完了・エラーゼロ。Chromium は user gesture ハンドラ内で生成された AudioContext を即座に 'running' にするため、フラグを外しても `suspended → resume()` 分岐には到達しなかった（盲点は解消されず、依然 E2E 未カバーのまま。この事実を記録し、盲点として維持する）
 - 検証: `npm run typecheck`/`lint`/`format:check`/`test`/`build` エラーゼロ。E2E を **3 回連続実行**し全 10 テスト（8 定義 × 2 project、3 skip）グリーン
+
+### M2-10: synthesis.ts / signal.ts / collectSelectedComponents 抽出（2026-07-08）
+
+- `src/types.ts` に `SynthesisComponent`（`Pick<FrequencyComponent, 'frequency'|'rawAmplitude'|'phase'>`）と `CheckboxState`（`{id, checked}`、DOM 要素ではなくプレーンデータ）を追加
+- `src/audio/signal.ts`: `playSineWave()` のサンプル生成ループを `renderSineSamples(length, sampleRate, frequency, gainValue, phase): Float32Array` として抽出。テストファーストで作成し、`sinewaveAnalyser.ts` 側は `data.set(renderSineSamples(...))` に差し替え
+- `src/audio/synthesis.ts`: 3 つの純粋関数を抽出
+  - `collectSelectedComponents(checkboxes, frequencyComponents, maxAnalysisAmplitude, includeTestWaves)`: `synthesizeSelectedComponents()`（音声パス、test-wave 非対応）と `calculateSynthesisWaveform()`（表示パス、test-wave 対応）に重複していたチェックボックス走査ロジックを**共通選択ロジック + `includeTestWaves` パラメータ**として統合（計画 1.2 の指示通り「重複統合」ではなく非対称を保存）。テスト用固定周波数の定数（440/880/1320Hz）もここに一本化
+  - `synthesizeAudioSamples(components, sampleRate, durationSeconds, maxAnalysisAmplitude)`: 音声パスの加算合成 + 適応的正規化（既存ロジックをそのまま複製）
+  - `calculateDisplaySynthesisWaveform(components, sampleRate=44100)`: 表示パスの合成波形計算。`sampleRate` を引数化しデフォルト 44100 で挙動維持（既知-2: 音声パスの実 sampleRate との不一致は意図的に温存）
+- **読み取りシム**（計画 1.4-A 点4）: `sinewaveAnalyser.ts` に `readCheckboxStates(): CheckboxState[]` を新設し、DOM の `.checked`/`.id` を読む唯一の橋渡しに一本化。`collectSelectedComponents` はこのシムが変換したプレーンデータのみを受け取る
+- `sinewaveAnalyser.ts` の `synthesizeSelectedComponents()`/`calculateSynthesisWaveform()` を上記の呼び出しに差し替え、重複していたループ・正規化コードを削除（大幅な行数削減。両関数とも DOM 操作・ステータスメッセージ・ログ出力などの副作用部分のみ残置）
+- **ログの簡略化（Q4 の許容範囲内の判断）**: 抽出した純粋関数では、元コードにあった大量の逐次 `console.log`（成分ごとの詳細ログ等）の一部を削減した。計画 1.3 Q4「デバッグログは挙動維持、ただし log/info/warn の量的維持は非保証」の明示的な許容に基づく判断（console.error チャネルの空 allowlist 方針には影響なし）
+- テスト: `src/audio/signal.test.ts`（4 件、解析的な sin 公式との一致を検証）、`src/audio/synthesis.test.ts`（17 件: `collectSelectedComponents` の非対称・範囲外 index・test-wave フォールバック値等、`synthesizeAudioSamples`/`calculateDisplaySynthesisWaveform` の決定性・正規化範囲・既定 sampleRate 挙動）。Float32Array の単精度精度に合わせて許容誤差を調整（`toBeCloseTo` の桁数、絶対誤差 1e-6）
+- 検証: `npm test` 32 tests 全グリーン（dsp 11 + signal 4 + synthesis 17）/ `typecheck`/`lint`/`format:check`/`build` エラーゼロ / E2E を **3 回連続実行**し全 10 テストグリーン（happy path の合成再生〜比較まで含む） / `test:coverage`: `dsp.ts` 98.73%、`synthesis.ts` 98.88%（stmts、report-only）
 
 ---
 
