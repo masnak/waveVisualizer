@@ -1,0 +1,26 @@
+name: OSV-Scanner (scheduled)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # 毎週月曜 12:30 UTC。push:branches:[main] も併記しているのは、schedule のみだと
+    # cron 発火まで最大1週間かかり、マージ直後に「初回グリーン」を確認できないため
+    # （.ai-workspace/20260708-003-pnpm-security-hardening-plan.md 作業ステップ9）。
+    # GitHub 仕様上、60日リポジトリ無活動で schedule トリガーは自動停止する点に注意。
+    - cron: '30 12 * * 1'
+
+permissions:
+  actions: read
+  security-events: write
+  contents: read
+
+jobs:
+  scan-scheduled:
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+    with:
+      scan-args: |-
+        --lockfile=./pnpm-lock.yaml
+        --config=./osv-scanner.toml
+      fail-on-vuln: true

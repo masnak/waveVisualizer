@@ -1,0 +1,17 @@
+# サプライチェーンセキュリティ強化（.ai-workspace/20260708-003-pnpm-security-hardening-plan.md）。
+#
+# github-actions エコシステムのみ対象。コミット SHA で固定した Action（pnpm/action-setup,
+# google/osv-scanner-action）の更新 PR を自動生成し、SHA 固定が陳腐化しないようにする。
+# npm（pnpm）エコシステムは意図的に対象外: 実行時依存が現状ゼロの段階で devDependencies
+# （Vite/Playwright/ESLint/TS/Vitest 等、更新頻度が高い）に自動更新 PR をかけると、
+# OSV-Scanner の hard-fail 検知で十分な現状に対し過剰な運用負荷になるため延期。
+# fft.js 等の実行時依存を初めて追加するタイミングで追加する（CLAUDE.md 参照）。
+#
+# auto-merge は有効化しない。SHA 固定は「新しい SHA を人が確認してからマージする」ことが
+# 前提の防御であり、auto-merge を有効にすると SHA 固定の意味が失われる。
+version: 2
+updates:
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'

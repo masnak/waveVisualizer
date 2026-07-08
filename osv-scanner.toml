@@ -1,0 +1,13 @@
+# OSV-Scanner のトリアージ設定（.ai-workspace/20260708-003-pnpm-security-hardening-plan.md）。
+#
+# PR差分・週次フルスキャンの両方を CI 失敗（hard-fail）扱いにしているため、既存
+# devDependencies に事後的な脆弱性が開示された場合、ここに期限付き ignore を追記して
+# グリーン化する。無条件のゲート無効化（ワークフロー自体を止める等）はしない。
+#
+# 記法:
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"       # 対象の脆弱性ID
+# ignoreUntil = 2026-12-31         # 期限（YYYY-MM-DD）。過ぎたら再びブロックされる
+# reason = "評価内容と再検討予定を記載"
+#
+# 現時点で ignore 対象なし。

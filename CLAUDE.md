@@ -31,14 +31,15 @@ DOM・AudioContext と絡む副作用オーケストレーションを 1 ファ�
 
 ### 起動
 
-`file://` ではマイク権限（getUserMedia）が取得できないため、必ず localhost で配信する。Vite dev server を使用（TS+TDD テスト基盤導入により `python3 -m http.server` から移行済み。`.ai-workspace/20260707-001-ts-tdd-test-infra-plan.md` 参照）。
+`file://` ではマイク権限（getUserMedia）が取得できないため、必ず localhost で配信する。Vite dev server を使用（TS+TDD テスト基盤導入により `python3 -m http.server` から移行済み。`.ai-workspace/20260707-001-ts-tdd-test-infra-plan.md` 参照）。パッケージマネージャは pnpm（`.ai-workspace/20260708-003-pnpm-security-hardening-plan.md` で npm から移行済み）。
 
 ```bash
-npm ci                # 初回のみ
-npm run dev           # → http://localhost:8000 で開く
+corepack enable        # 初回のみ（pnpm を有効化。package.json の packageManager フィールドからバージョン自動解決）
+pnpm install            # 初回のみ
+pnpm run dev             # → http://localhost:8000 で開く
 ```
 
-主要 npm scripts: `dev` / `build` / `preview` / `test`（Vitest, node 環境）/ `test:watch` / `test:coverage`（report-only）/ `test:e2e`（Playwright）/ `typecheck`（`tsc --noEmit`、strict・allowJs off）/ `lint`（ESLint flat config、`--max-warnings=0`）/ `format` / `format:check`（Prettier）
+主要 pnpm scripts: `dev` / `build` / `preview` / `test`（Vitest, node 環境）/ `test:watch` / `test:coverage`（report-only）/ `test:e2e`（Playwright）/ `typecheck`（`tsc --noEmit`、strict・allowJs off）/ `lint`（ESLint flat config、`--max-warnings=0`）/ `format` / `format:check`（Prettier）
 
 ### ブラウザ自動検証
 
@@ -51,10 +52,21 @@ npm run dev           # → http://localhost:8000 で開く
 `--autoplay-policy=no-user-gesture-required` は必須（無いと headless で AudioContext が `running` に遷移せず初期化がハングする）。
 
 ```bash
-npm run test:e2e       # 特性化 E2E（tone / silence 2 プロジェクト）を実行
+pnpm run test:e2e       # 特性化 E2E（tone / silence 2 プロジェクト）を実行
 ```
 
-手動でブラウザ確認する場合の検証ループ: 変更 → `npm run dev` 起動 → 「初期化」→「録音開始」→「周波解析」→ 成分選択 →「合成再生」をブラウザで通し、コンソールエラーがないことを確認する。
+手動でブラウザ確認する場合の検証ループ: 変更 → `pnpm run dev` 起動 → 「初期化」→「録音開始」→「周波解析」→ 成分選択 →「合成再生」をブラウザで通し、コンソールエラーがないことを確認する。
+
+### サプライチェーンセキュリティ方針（`.ai-workspace/20260708-003-pnpm-security-hardening-plan.md`）
+
+fft.js 等の外部 npm パッケージ導入に先立ち整備。現状は外部ランタイム依存ゼロ（後述「依存関係」節参照）。追加する場合は以下を前提とする:
+
+- **pnpm 選定理由**: frozen-lockfile・OSV スキャンは npm でも実現できるが、依存パッケージのライフサイクルスクリプト（`postinstall` 等）を**既定でブロックし許可制にする**設計（pnpm v10 以降の既定挙動）は pnpm 固有。npm の `--ignore-scripts` はオプトアウト方式でフラグ付け忘れが事故になりうるのに対し、pnpm は既定で安全側に倒れる
+- **`pnpm.onlyBuiltDependencies` 相当（pnpm v11 以降は `pnpm-workspace.yaml` の `allowBuilds`）は実測してから個別許可**。`pnpm approve-builds` の対話的一括承認は使わない。将来新しい依存を追加するたびに、ブロックされたスクリプトを個別確認する運用コストが恒常的に発生する
+- **`pnpm-workspace.yaml` の `minimumReleaseAge`**（公開直後のパッケージバージョンのインストールを避けるクールダウン）で、OSV-Scanner では検知できない「新規公開の悪性パッケージ」にも備える
+- **新規に追加するサードパーティ GitHub Actions はコミット SHA で固定**（`pnpm/action-setup`、`google/osv-scanner-action` 等）。既存の GitHub 公式 Action（`actions/checkout` 等）は対象外
+- **OSV-Scanner**: PR 差分・週次フルスキャンの両方を CI 失敗（hard-fail）扱い。既存依存に脆弱性がヒットした場合は `osv-scanner.toml` に期限付き ignore を追記してトリアージする（無条件のゲート無効化はしない）
+- **Dependabot は `github-actions` エコシステムのみ**（SHA 固定の陳腐化に追従）。`npm`（pnpm）エコシステムは意図的に延期している。**fft.js 等、初めて実行時依存を追加するタイミングで `npm` エコシステムの Dependabot 設定を追加すること**（`.github/dependabot.yml` にコメントあり）
 
 ### エージェント運用ルール
 
@@ -164,7 +176,7 @@ npm run test:e2e       # 特性化 E2E（tone / silence 2 プロジェクト）�
 - Web Audio API（ブラウザ内蔵サポート）
 - マイクアクセス用 MediaDevices API・MediaRecorder API
 - 可視化用 Canvas 2D API
-- 外部 JavaScript ライブラリ不要
+- 現状は外部ランタイム依存ゼロ。追加する場合は「サプライチェーンセキュリティ方針」節（`allowBuilds` での allowlist 運用・OSV-Scanner でのスキャン・Dependabot の `npm` エコシステム追加）を前提とする
 
 ## 技術仕様
 

@@ -1,0 +1,11 @@
+# pnpm 移行 + サプライチェーンセキュリティ強化
+# (.ai-workspace/20260708-003-pnpm-security-hardening-plan.md)
+#
+# minimumReleaseAge: 公開直後のパッケージバージョンのインストールを避けるクールダウン。
+# 悪意ある postinstall スクリプトを含む新規公開パッケージ（未報告のため OSV-Scanner では
+# 検知できない）に対する数少ない直接的な防御策。単位は分。1440分 = 1日。
+minimumReleaseAge: 1440
+
+# allowBuilds: ライフサイクルスクリプトの実行を許可する依存の allowlist（pnpm v11 の
+# onlyBuiltDependencies 後継設定）。移行作業中に実測してから個別追加する。
+# pnpm approve-builds の対話的一括承認は使わない。
