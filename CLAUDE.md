@@ -4,22 +4,27 @@
 
 ## プロジェクト構成
 
-> 暫定構成（M2-8 時点）。sinewaveAnalyser.ts は M2-10 でさらに分割予定。最終形は
-> `.ai-workspace/20260707-001-ts-tdd-test-infra-plan.md` の 1.2 節を参照。
+TypeScript（strict）+ Vite。M2-11（`.ai-workspace/20260707-001-ts-tdd-test-infra-plan.md`）完了時点の構成。
+`sinewaveAnalyser.ts` は計画 1.2 節が描いた最終形（analyser.ts/synthesis.ts/signal.ts/playback.ts/sineWaveList.ts への完全分割）までは踏み込まず、
+DOM・AudioContext と絡む副作用オーケストレーションを 1 ファイルに残し、純粋計算部分（dsp.ts/signal.ts/synthesis.ts）のみ抽出する形で完了とした（スコープ判断、進捗ログ参照）。
 
 ```
 /
 ├── index.html                          # Vite エントリ（単一 <script type="module" src="/src/main.ts">）
 └── src/
-    ├── main.ts                         # 録音・再生・初期化処理
-    ├── state.ts                        # 共有状態（audioContext / recordedChunks）
-    ├── types.ts                        # 共有型（FrequencyComponent / AnalysisResult）
-    ├── sinewaveAnalyser.ts             # 位相保持FFT解析呼び出し・正弦波再生・音声合成・合成波形表示
-    ├── audio/dsp.ts                    # 純粋関数: DFT・ハミング窓・動的閾値・dB変換（golden-vector 保護）
+    ├── main.ts                         # 録音・再生・初期化処理、init() 集約、AppContext 生成
+    ├── context.ts                      # AppContext（audioContext）。main.ts が生成し明示的に注入
+    ├── state.ts                        # 共有状態（recordedChunks のみ。真に残余の共有状態）
+    ├── types.ts                        # 共有型（FrequencyComponent / AnalysisResult / SynthesisComponent / CheckboxState）
+    ├── sinewaveAnalyser.ts             # FFT解析呼び出し・正弦波再生・音声合成のDOM/AudioContextオーケストレーション
+    ├── audio/
+    │   ├── dsp.ts                      # 純粋関数: DFT・ハミング窓・動的閾値・dB変換（golden-vector 保護）
+    │   ├── signal.ts                   # 純粋関数: renderSineSamples（位相付き正弦波サンプル生成）
+    │   └── synthesis.ts                # 純粋関数: collectSelectedComponents / 音声パス・表示パスの合成計算
     ├── ui/status.ts                    # showStatusMessage
     └── visualizers/
-        ├── waveVisualizer.ts           # 波形表示用 WaveVisualizer クラス
-        └── spectrumVisualizer.ts       # 周波数スペクトラム表示用 SpectrumVisualizer クラス
+        ├── waveVisualizer.ts           # WaveVisualizer（start/stop 契約の rAF ループ）
+        └── spectrumVisualizer.ts       # SpectrumVisualizer（同上）
 ```
 
 ## 開発・検証
@@ -33,7 +38,7 @@ npm ci                # 初回のみ
 npm run dev           # → http://localhost:8000 で開く
 ```
 
-主要 npm scripts: `dev` / `build` / `preview` / `test`（Vitest, 導入後）/ `test:e2e`（Playwright）/ `typecheck`（tsc --noEmit）/ `lint` / `format`（導入後）
+主要 npm scripts: `dev` / `build` / `preview` / `test`（Vitest, node 環境）/ `test:watch` / `test:coverage`（report-only）/ `test:e2e`（Playwright）/ `typecheck`（`tsc --noEmit`、strict・allowJs off）/ `lint`（ESLint flat config、`--max-warnings=0`）/ `format` / `format:check`（Prettier）
 
 ### ブラウザ自動検証
 
@@ -125,23 +130,24 @@ npm run test:e2e       # 特性化 E2E（tone / silence 2 プロジェクト）�
 
 ### 可視化クラス
 
-- **WaveVisualizer**（waveVisualizer.js）: 時間領域波形表示
-- **SpectrumVisualizer**（spectrumVisualizer.js）: 周波数領域スペクトラム表示。`setRecordingMode(bool)` で録音中のみ詳細なデバッグログ（FFT 統計、ビン・周波数マッピング、高振幅・20kHz 超の検出）を出力
-- **SynthesisWaveVisualizer**（sinewaveAnalyser.js）: 合成波形の静的表示。過渡状態を避けるため 100ms の準備区間後の 200ms 分を描画し、ピーク 0.8 に正規化
+- **WaveVisualizer**（`visualizers/waveVisualizer.ts`）: 時間領域波形表示。`start()`/`stop()` 契約の rAF ループ（`running` フラグで `start()` は冪等、多重ループを防止）
+- **SpectrumVisualizer**（`visualizers/spectrumVisualizer.ts`）: 周波数領域スペクトラム表示。同じく `start()`/`stop()` 契約。`setRecordingMode(bool)` で録音中のみ詳細なデバッグログ（FFT 統計、ビン・周波数マッピング、高振幅・20kHz 超の検出）を出力
+- **SynthesisWaveVisualizer**（`sinewaveAnalyser.ts`）: 合成波形の静的表示。過渡状態を避けるため 100ms の準備区間後の 200ms 分を描画し、ピーク 0.8 に正規化
 
-### 解析機能（analyseRecording）
+### 解析機能（`sinewaveAnalyser.ts` の analyseRecording → `audio/dsp.ts` の analyseFrequencyComponents）
 
-- FFT サイズ：16384 サンプル、ハミング窓適用の自前 DFT 実装（位相情報を保持）
+- FFT サイズ：16384 サンプル、ハミング窓適用の自前 DFT 実装（位相情報を保持）。DFT 本体は `audio/dsp.ts` の純粋関数で golden-vector テスト（`rel 1e-6`）に保護されている
 - 動的閾値（平均振幅・最大振幅から算出）を超えた成分のみ抽出
 - 8kHz 超の高周波成分には 10 倍厳しい閾値を適用してノイズを除外
-- 振幅降順にソートし上位 100 成分を `frequencyComponents` に保存・表示
+- 振幅降順にソートし上位 100 成分を保存・表示
 - 振幅は最大成分基準の dB 値と生振幅（rawAmplitude）の両方を保持
 
-### 正弦波再生・合成（sinewaveAnalyser.js）
+### 正弦波再生・合成（`sinewaveAnalyser.ts` のオーケストレーション + `audio/signal.ts`・`audio/synthesis.ts` の純粋計算）
 
-- **個別再生（playSineWave）**: 位相を反映したサンプルを AudioBuffer に生成し AudioBufferSourceNode で 5 秒間再生（OscillatorNode は不使用）。音量は相対振幅 × 基準ゲイン 0.15（0.001〜0.3 にクランプ）
-- **合成再生（synthesizeSelectedComponents）**: 選択成分を位相付きで 2 秒バッファに加算合成。相対振幅に応じた 3 段階ゲイン、クリッピング防止と音量増幅の適応正規化付き
-- **合成波形表示（calculateSynthesisWaveform）**: チェックボックスの状態変化のたびに再計算・再描画
+- **個別再生（playSineWave）**: サンプル生成は `audio/signal.ts` の `renderSineSamples()`（純粋関数）。位相を反映したサンプルを AudioBuffer に生成し AudioBufferSourceNode で 5 秒間再生（OscillatorNode は不使用）。音量は相対振幅 × 基準ゲイン 0.15（0.001〜0.3 にクランプ）。再生ハンドルは checkbox id をキーにした `Map` で管理
+- **合成再生（synthesizeSelectedComponents）**: 選択成分の収集は `audio/synthesis.ts` の `collectSelectedComponents()`（`includeTestWaves` パラメータで音声パス/表示パスの選択ロジックを共通化）。加算合成・適応正規化は `synthesizeAudioSamples()`。相対振幅に応じた 3 段階ゲイン、クリッピング防止と音量増幅の適応正規化付き
+- **合成波形表示（calculateSynthesisWaveform）**: `audio/synthesis.ts` の `calculateDisplaySynthesisWaveform()`。チェックボックスの状態変化のたびに再計算・再描画。音声パスと表示パスは意図的に別関数のまま（正規化方式が異なるため統合しない）
+- **AppContext**（`context.ts`）: `audioContext` は main.ts が生成し `initSinewaveAnalyser(ctx)` で明示的に注入。`sinewaveAnalyser.ts` 内の各関数はこれを引数として受け取る（グローバル共有状態ではなく注入依存）
 
 ## 使用ワークフロー
 
@@ -163,7 +169,8 @@ npm run test:e2e       # 特性化 E2E（tone / silence 2 プロジェクト）�
 ## 技術仕様
 
 - Audio Context の初期化にはユーザージェスチャ（クリックイベント）が必要
-- リアルタイム可視化は requestAnimationFrame を使用してスムーズ更新
+- リアルタイム可視化は requestAnimationFrame を使用してスムーズ更新。`start()`/`stop()` 契約で多重ループを防止（M2-11）
 - FFT 解析は振幅を最大成分基準の dB スケールに変換して表示
 - 正弦波・合成音声はすべて位相を反映したサンプル列を直接生成（AudioBuffer + AudioBufferSourceNode）
+- ロード時副作用（イベントリスナー登録）は `main.ts`/`sinewaveAnalyser.ts` それぞれの `init()` 系関数に集約。起動は `DOMContentLoaded`（readyState ガード付き）
 - コンソールに絵文字付きの診断ログを多数出力（初期化情報、録音中の詳細分析、異常サンプルレート・高周波の警告）

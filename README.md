@@ -146,13 +146,18 @@ FFTサイズ: 16384サンプル（超高精度）
 
 ### ファイル構成
 
+TypeScript（strict）+ Vite。詳細は [CLAUDE.md](./CLAUDE.md) のプロジェクト構成節を参照。
+
 ```
 waveVisualizer/
-├── index.html              # メインUI（ボタン・キャンバス）
-├── main.js                 # 音声録音・再生・初期化
-├── waveVisualizer.js       # リアルタイム波形表示
-├── spectrumVisualizer.js   # リアルタイムスペクトラム表示
-├── sinewaveAnalyser.js     # 位相情報保持FFT・音声合成
+├── index.html              # メインUI（ボタン・キャンバス）、Vite エントリ
+├── src/
+│   ├── main.ts             # 音声録音・再生・初期化、init() 集約
+│   ├── sinewaveAnalyser.ts # 位相情報保持FFT呼び出し・正弦波再生・音声合成
+│   ├── audio/               # 純粋関数（dsp.ts・signal.ts・synthesis.ts、Vitest でユニットテスト済み）
+│   ├── visualizers/          # WaveVisualizer・SpectrumVisualizer（波形・スペクトラム表示）
+│   └── ...                 # context.ts・state.ts・types.ts・ui/status.ts
+├── e2e/                     # Playwright 特性化 E2E テスト
 ├── README.md               # このファイル
 └── CLAUDE.md               # 詳細技術ドキュメント
 ```

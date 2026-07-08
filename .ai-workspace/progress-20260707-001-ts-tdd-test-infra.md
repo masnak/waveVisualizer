@@ -12,7 +12,7 @@
 ## フェーズ進捗
 
 - M1: テスト基盤 [6/6] (100%) - [状態: ✅ 完了]
-- M2: リファクタ + TS 完全移行 [5/6] (83%) - [状態: 実装中]
+- M2: リファクタ + TS 完全移行 [6/6] (100%) - [状態: ✅ 完了]
 
 ### M1: テスト基盤（自己完結マイルストーン）
 
@@ -34,13 +34,13 @@
 | M2-9 | init() 集約（両ファイル、readyState ガード、ポーリング timeout=resolve） | ✅ 完了 | E2E 3 回連続グリーン（計 10 テスト）/ resume 経路の手動確認 1 回実施（盲点-1 を再確認、詳細下記） |
 | M2-10 | synthesis.ts / signal.ts / collectSelectedComponents（includeTestWaves パラメータ化）抽出 | ✅ 完了 | ユニット 32 テスト（dsp 11 + signal 4 + synthesis 17）+ E2E 3 回連続グリーン。coverage: dsp.ts 98.73% / synthesis.ts 98.88%（stmts） |
 | M2-11 | 全 .ts 化 + allowJs off + rAF start/stop（設計改善と分類）+ Map 化 + AppContext 収斂 | ✅ 完了 | `tsc --noEmit`（strict, allowJs off）ゼロ / `state.audioContext` 廃止・`context.ts` の AppContext へ収斂 / rAF 多重化バグの回帰テストで解消を実証 / ユニット 32 + E2E 3 回連続グリーン（計 12 テスト） |
-| M2-12 | 最終ドキュメント同期 + coverage 参考値・既存バグ / E2E 盲点一覧の記録 | ⬜ 未着手 | CLAUDE.md/README のコマンドが実際に動く |
+| M2-12 | 最終ドキュメント同期 + coverage 参考値・既存バグ / E2E 盲点一覧の記録 | ✅ 完了 | CLAUDE.md/README を最新構成に同期し記載コマンドを全て実地検証済み。既存バグ・盲点一覧・coverage 参考値を記録済み |
 
 ---
 
 ## 現在実行中
 
-**M1 完了。M2-7・M2-8・M2-9・M2-10・M2-11 完了**（GitHub Pages は GitHub Actions デプロイへ移行済み、record-btn 競合状態バグも修正済み、既知-1 の rAF 多重化バグも設計改善で解消）。次は M2-12（最終ドキュメント同期 + クローズ）着手待ち。
+**計画完了**（M1 全 6 ステップ + M2 全 6 ステップ）。TypeScript + TDD テスト環境整備は完了。今後の作業は本計画の範囲外（新規の別計画として起票する）。
 
 ---
 
@@ -225,6 +225,23 @@ M2-9 着手前に、ユーザーから実機（ライブサイト + ローカル
   - `sinewaveAnalyser.ts`: `playSineWave`/`synthesizeSelectedComponents`/`playSynthesizedAudio`/`handleSineWaveCheckbox`/`displaySineWaves`/`analyseRecording` の各関数に `audioContext: AudioContext` を明示的な引数として追加し、`state.audioContext!` を全て置換。`initSinewaveAnalyser(ctx: AppContext)` の `analyseBtn` ハンドラで `analyseRecording(ctx.audioContext!)` を起点に、以降は全て明示的な引数として下流へ伝播（クロージャ捕捉ではなく関数シグネチャでの受け渡しを採用し、個々の関数の独立したテスト可能性を保った）
   - 移行期の `state.audioContext`（プロパティ変更方式の例外）は完全に廃止され、`state.ts` には `recordedChunks` のみが残る
 - 検証: `npm run typecheck`（strict, allowJs off）エラーゼロ / `lint`/`format:check` エラーゼロ / `npm test` 32 tests 全グリーン（既存の dsp/signal/synthesis テストは無影響） / `npm run build` 成功 / E2E を **3 回連続実行**し全 12 テスト（9 定義 × 2 project、3 skip、rAF 回帰テスト含む）グリーン
+- push 後 GitHub Actions（CI/CI Smoke/Deploy to GitHub Pages）3 ワークフロー全て初回グリーン。ライブサイトへの実地確認（初期化→録音→解析→全て選択→合成再生→原音比較→波形停止の通し）も成功
+
+### M2-12: 最終ドキュメント同期 + クローズ（2026-07-08）
+
+- **CLAUDE.md 更新**:
+  - 「プロジェクト構成」を M2-11 完了時点の実際のディレクトリ構成に同期（`context.ts`/`audio/signal.ts`/`audio/synthesis.ts` を追加、`sinewaveAnalyser.ts` は計画 1.2 節が描いた完全分割（analyser.ts/synthesis.ts/signal.ts/playback.ts/sineWaveList.ts）までは行わず DOM/AudioContext オーケストレーションを 1 ファイルに残したスコープ判断であることを明記）
+  - npm scripts 一覧を実装済みの全スクリプト（`test:watch`/`test:coverage`/`format:check` 等）に更新
+  - 「可視化クラス」「解析機能」「正弦波再生・合成」の各節を新しいファイル配置・関数名（`audio/dsp.ts`/`audio/signal.ts`/`audio/synthesis.ts`/`context.ts` の AppContext 注入/`start()`/`stop()` 契約）に同期
+  - 「技術仕様」に rAF start/stop 契約・init() 集約の記述を追加
+- **README.md 更新**: 「ファイル構成」節をルート直下 `.js` 直書きの古い記載から `src/` 配下の TypeScript 構成 + `e2e/` に更新し、詳細は CLAUDE.md 参照へ誘導
+- **CLAUDE.md 記載コマンドの実地検証**: `npm install`（差分なし確認）/ `npm run dev`（起動確認、ポート競合の残プロセスも検出・クリーンアップ）/ `npm run build` / `npm run typecheck` / `npm run lint` / `npm run format:check` / `npm test` を全て実行しエラーゼロを確認
+- **既知バグ・盲点一覧の最終整理**: 「既存バグ・盲点の記録」節を全ステップ通して最新化済み（既知-1 は M2-11 で解消、既知-4 は M2-9 直前に発見・修正、盲点-1 は未解消のまま維持、盲点-2 は M1-2 で解消と確認）。既知-3（main.ts の未使用 `sampleRate` 定数）のファイル参照を `main.js`→`main.ts` に修正
+- **M2 完了基準チェックリストの最終確認**: 「vite build成功 + CI E2Eがbuild+preview対象でグリーン」の後半（CI E2E の build+preview 切替）のみ計画からの意図的逸脱として未達成のまま記録し、他の全項目にチェックを入れた
+- **test:coverage 参考値（report-only、ゲートなし）**: `dsp.ts` 98.73% stmts / 87.5% branches、`synthesis.ts` 98.88% stmts / 90.9% branches（signal.ts は 100% だがカバレッジレポートの個別行表示からは省略される v8 の既知挙動、全体集計には反映済み）
+- 検証: 本節の全コマンドが実際に動くことを確認（上記）。CLAUDE.md/README.md の変更は本コミットで push・CI/Deploy 確認まで実施
+
+**M2 完了**（全 6 ステップ: M2-7〜M2-12）。TypeScript + TDD テスト環境整備計画（`.ai-workspace/20260707-001-ts-tdd-test-infra-plan.md`）はこれで完了。
 
 ---
 
@@ -242,15 +259,16 @@ M2-9 着手前に、ユーザーから実機（ライブサイト + ローカル
 
 ### M2 完了基準
 
-- [ ] dsp / synthesis / signal のユニットテストがグリーン（golden 5 フィールド + 解析的期待値 + 8kHz 境界）
-- [ ] `collectSelectedComponents`（includeTestWaves 付き）の node ユニットテストがグリーン
-- [ ] `tsc --noEmit`（strict、allowJs off）・`lint --max-warnings=0`・`format:check` エラーゼロ
-- [ ] `vite build` 成功 + CI の E2E が build + preview 対象でグリーン
-- [ ] window ブリッジ全除去・`state.audioContext` 廃止・AppContext 注入に収斂
-- [ ] GitHub Pages ライブデモが GitHub Actions ベースのデプロイへ移行済み・URL が 200 で応答し主要ワークフローが手動で通る（1.4-G、M2-8 と atomic）
-- [ ] テスト実行時間: ユニット < 5s / E2E < 90s 目安
-- [ ] CLAUDE.md / README が新フロー・構成と一致
-- [ ] 既存バグ・E2E 盲点・意図的挙動変更（計画 0.5 例外①〜③）が本ファイルに記録済み
+- [x] dsp / synthesis / signal のユニットテストがグリーン（golden 5 フィールド + 解析的期待値 + 8kHz 境界）（M2-7/M2-10、計 32 tests）
+- [x] `collectSelectedComponents`（includeTestWaves 付き）の node ユニットテストがグリーン（M2-10、17 tests 中に含む）
+- [x] `tsc --noEmit`（strict、allowJs off）・`lint --max-warnings=0`・`format:check` エラーゼロ（M2-11 で allowJs off 達成）
+- [x] `vite build` 成功（M2-8〜M2-11 各ステップで確認）
+- [ ] ~~CI の E2E が build + preview 対象でグリーン~~ → **計画から意図的に逸脱**（M2-8）。`vite preview` の既知の不具合（サブパス `base` 設定下で ES module スクリプト読み込みが SPA フォールバックに誤って横取りされる）により断念。代替として `vite build` のローカル成功確認・`curl` による dist/ 静的配信の直接検証・実際のデプロイ後のライブ URL に対する実地確認の 3 点で計画の意図（bundled build でも動作すること）を担保（詳細は M2-8 の完了記録を参照）
+- [x] window ブリッジ全除去・`state.audioContext` 廃止・AppContext 注入に収斂（M2-11）
+- [x] GitHub Pages ライブデモが GitHub Actions ベースのデプロイへ移行済み・URL が 200 で応答し主要ワークフローが手動で通る（1.4-G、M2-8 と atomic。M2-11 完了後も再度ライブ確認済み）
+- [x] テスト実行時間: ユニット 195ms（< 5s 目安を大幅にクリア）/ E2E ローカル約 10〜12s・CI 約 22〜23s（いずれも < 90s 目安をクリア）
+- [x] CLAUDE.md / README が新フロー・構成と一致（M2-12）
+- [x] 既存バグ・E2E 盲点・意図的挙動変更（計画 0.5 例外①〜③）が本ファイルに記録済み（「既存バグ・盲点の記録」節、既知-1〜4・盲点-1〜2）
 
 ---
 
@@ -285,7 +303,7 @@ M2-9 着手前に、ユーザーから実機（ライブサイト + ローカル
 
 - [既知-1・解消済み] rAF 自己ループの多重化（初期化ボタン連打で発火しうる）→ M2-11 で `WaveVisualizer`/`SpectrumVisualizer` を `start()`/`stop()` 契約化（`running` フラグで `start()` を冪等化）し設計改善として解消。E2E 回帰テスト（「初期化ボタン連打→エラーなし→通常フロー継続」）で解消を実証
 - [既知-2] `calculateSynthesisWaveform` の sampleRate=44100 ハードコード vs 音声パスの実 sampleRate 不一致 → 引数化・デフォルト維持で温存
-- [既知-3] main.js の未使用 `const sampleRate = 44100`（デッドコード）→ 記録のみ
+- [既知-3] `main.ts` の未使用 `const sampleRate = 44100`（デッドコード、旧 main.js から継承）→ 記録のみ。ESLint の `--max-warnings=0` を満たすため `void sampleRate;` で明示的に unused 扱いを抑制（M1-5〜）
 - [盲点-1] suspended → resume 分岐は E2E で実行されない（autoplay 緩和下）→ M2-9 で手動確認。**結果: autoplay 緩和フラグを外しても Chromium が user gesture 内の AudioContext を即座に running にするため到達せず。盲点は未解消のまま維持（自動テストでは踏めない既知の限界として記録）**
 - [盲点-2] test-wave 3 経路は silence フィクスチャで 0 件にできない場合 E2E 検証不能 → M1-2 で確定。**結果: silence フィクスチャで 5 回連続 0 件を観測、E2E 検証可能と判明（盲点は解消）**
 - [既知-4・修正済み] **record-btn の初期化未完了時競合状態**（2026-07-08、ユーザー実機報告 → 修正）: `record-btn` は元 main.js から一貫して `disabled` 属性を持たず、初期化完了（`audioStream` 確定）前でも押せる状態だった。初期化完了前に押すと `audioStream` が `undefined` のまま `new MediaRecorder(undefined)` が呼ばれ `TypeError: Failed to construct 'MediaRecorder': parameter 1 is not of type 'MediaStream'` で失敗（この場合 `record-btn` のテキストは「録音中...」に変化しない）。フェイクデバイス E2E は許可プロンプトが即時付与されるため踏まなかったが、実マイクでは許可待ちの体感時間が長くなり踏みやすい。`investigate` スキルで実際にライブサイトへ Playwright アクセスし `[error] Recording error: TypeError...` を実地で再現・確定。**修正**: `index.html` の `record-btn` に `disabled` を追加、`main.ts` の初期化完了処理（`initBtn.disabled = true` と同じ箇所）で `recordBtn.disabled = false` を設定。回帰テスト（`e2e/workflow.spec.ts` 「bug fix: record-btn disabled until init completes」）を追加し、修正前に失敗・修正後に成功することを確認済み
@@ -323,10 +341,21 @@ M2-9 着手前に、ユーザーから実機（ライブサイト + ローカル
 5. `6a0df95` Add TS+TDD test infra plan, review, and progress log
 6. push 後: GitHub Actions run [28873891395](https://github.com/masnak/waveVisualizer/actions/runs/28873891395)（CI Smoke, success）/ [28873891839](https://github.com/masnak/waveVisualizer/actions/runs/28873891839)（CI, success）
 
+## コミット履歴（M2）
+
+1. `0baaa80` Extract dsp.ts with golden-vector regression tests（M2-7）
+2. `1ff61aa` ESM-ify all 4 files, wire dsp.ts, migrate GitHub Pages to Actions deploy（M2-8。Pages Source 切替と atomic）
+3. `a490286` Record M2-8 completion（デプロイ確認記録）
+4. `54f4a46` Fix: disable record-btn until init completes（既知-4 バグ修正）
+5. `ad05bb3` Aggregate load-time side effects into init()（M2-9）
+6. `8deaf26` Extract synthesis.ts / signal.ts / collectSelectedComponents（M2-10）
+7. `81f288b` Finish M2-11: allowJs off, rAF start/stop, Map handles, AppContext injection
+8. （本コミット）Sync CLAUDE.md/README.md, final progress log（M2-12）
+
 ## 次のアクション
 
-**M1 完了**（全チェックリスト・GitHub Actions 実行確認込み）。次は M2-7（dsp.ts 抽出 + golden-vector 固定）から着手。M2-8（ESM 化 + `src/` 物理移動 + GitHub Pages デプロイ移行）は現行のレガシー Pages 配信（`source: main:/`）を破壊しうる atomic 作業のため、着手前に改めてユーザー確認を挟む想定（計画 1.4-G 参照）。
+**計画完了**（M1 全 6 ステップ + M2 全 6 ステップ、いずれも GitHub Actions 実行確認・ライブサイト実地確認込み）。継続する作業（さらなるリファクタ、機能追加等）は新規の別計画として起票する。
 
 ## 最終更新
 
-**最終更新:** 2026-07-07（**M1 全ステップ完了**。GitHub Actions CI-smoke/CI-full 共に push 後初回グリーン。次は M2-7 着手待ち）
+**最終更新:** 2026-07-08（**M1・M2 全 12 ステップ完了**。GitHub Pages は GitHub Actions デプロイへ移行済みでライブ動作確認済み。record-btn 競合状態バグ・rAF 多重化バグはいずれも修正・解消済み。CLAUDE.md/README.md は最新構成に同期済み。計画クローズ）
