@@ -12,7 +12,7 @@
 ## フェーズ進捗
 
 - M1: テスト基盤 [6/6] (100%) - [状態: ✅ 完了]
-- M2: リファクタ + TS 完全移行 [2/6] (33%) - [状態: 実装中]
+- M2: リファクタ + TS 完全移行 [3/6] (50%) - [状態: 実装中]
 
 ### M1: テスト基盤（自己完結マイルストーン）
 
@@ -31,7 +31,7 @@
 |---|---|---|---|
 | M2-7 | dsp.ts 抽出 + golden-vector 固定（born-ESM 独立モジュール、アプリ未接続） | ✅ 完了 | golden（frequency/rawAmplitude/phase/amplitudeDB/maxAmplitude、rel 1e-6）+ 解析的期待値 + 8kHz 境界、計 11 テストグリーン。coverage 98.73% stmts / 87.5% branches（report-only） |
 | M2-8 | state 設計 + ESM 化（window ブリッジ、葉→根、src/ 移設、dsp.ts 差し替え、audioContext は移行期 state 方式）+ GitHub Pages デプロイ移行（1.4-G、src/ 移設と atomic） | ✅ 完了 | 4 ファイル ESM 化・E2E 5 回連続グリーン・`vite build` 成功・GitHub Actions 3 ワークフロー（CI/CI Smoke/Deploy to GitHub Pages）全て初回グリーン・**ライブ URL（masnak.github.io/waveVisualizer）で初期化→録音→解析→合成再生の通しを実機確認済み（スクリーンショット証跡あり）**。**計画からの変更点**: CI E2E の build+preview 対象切替は `vite preview` の既知の不具合により断念（詳細下記） |
-| M2-9 | init() 集約（両ファイル、readyState ガード、ポーリング timeout=resolve） | ⬜ 未着手 | E2E グリーン / resume 経路の手動確認 1 回 |
+| M2-9 | init() 集約（両ファイル、readyState ガード、ポーリング timeout=resolve） | ✅ 完了 | E2E 3 回連続グリーン（計 10 テスト）/ resume 経路の手動確認 1 回実施（盲点-1 を再確認、詳細下記） |
 | M2-10 | synthesis.ts / signal.ts / collectSelectedComponents（includeTestWaves パラメータ化）抽出 | ⬜ 未着手 | ユニット + E2E グリーン |
 | M2-11 | 全 .ts 化 + allowJs off + rAF start/stop（設計改善と分類）+ Map 化 + AppContext 収斂 | ⬜ 未着手 | `tsc --noEmit`（strict, allowJs off）ゼロ / ブリッジ・state.audioContext 全廃 / ユニット + E2E グリーン |
 | M2-12 | 最終ドキュメント同期 + coverage 参考値・既存バグ / E2E 盲点一覧の記録 | ⬜ 未着手 | CLAUDE.md/README のコマンドが実際に動く |
@@ -40,7 +40,7 @@
 
 ## 現在実行中
 
-**M1 完了。M2-7・M2-8 完了**（GitHub Pages は GitHub Actions デプロイへ移行済み、ライブ URL 動作確認済み）。次は M2-9（init() 集約）着手待ち。
+**M1 完了。M2-7・M2-8・M2-9 完了**（GitHub Pages は GitHub Actions デプロイへ移行済み、record-btn 競合状態バグも修正済み）。次は M2-10（synthesis.ts/signal.ts 抽出）着手待ち。
 
 ---
 
@@ -179,6 +179,23 @@
 - `curl` でライブ URL・アセットともに 200 応答を確認後、**実際のライブ URL（`https://masnak.github.io/waveVisualizer/`）に対して Playwright（フェイクマイク）で初期化→録音→周波解析→全て選択→合成再生→比較ボタン活性化までの通しシナリオを実行し成功。フルページスクリーンショットで波形・スペクトラム・合成波形・成分リストが正しく表示されていることを目視確認済み**（M2 完了基準の「Pages 切替後にライブ URL が 200 で応答し主要ワークフローが手動で通ることを確認」を実質的に充足。「手動」の定義は本プロジェクトの CLAUDE.md が定めるフェイクデバイス Playwright 方式に準拠）
 - リポジトリの Pages 設定を `gh api repos/masnak/waveVisualizer/pages` で最終確認: `"build_type":"workflow"`（切替完了）
 
+### バグ修正: record-btn 初期化未完了時の競合状態（2026-07-08、M2 系列外・ユーザー報告）
+
+M2-9 着手前に、ユーザーから実機（ライブサイト + ローカル両方）で「録音ができない」という報告を受け、`investigate` スキルで調査・修正。詳細は「既存バグ・盲点の記録」の [既知-4・修正済み] を参照。要点:
+
+- `investigate` スキルの Phase 1〜5 に沿って実施。ライブサイトへ Playwright で実アクセスし `TypeError: Failed to construct 'MediaRecorder': parameter 1 is not of type 'MediaStream'` を実地で再現・確定（curl やコンソール手動確認だけでは分からず、実際にブラウザ操作を再現することで特定）
+- 修正: `record-btn` に `disabled` を追加し、初期化完了時（`initBtn.disabled = true` と同タイミング）に有効化
+- 回帰テスト追加（修正前レッド・修正後グリーンを確認）、ローカル全チェック・ライブサイト実地確認・CI 3 ワークフロー全グリーンを確認して push（コミット `54f4a46`）
+
+### M2-9: ロード時副作用の init() 集約（2026-07-08）
+
+- `sinewaveAnalyser.ts`: 末尾にあった `analyseBtn`/`sineWaveBtn` のグローバルスコープ宣言 + `addEventListener` 登録を `export function initSinewaveAnalyser(): void { ... }` に集約
+- `main.ts`: `initBtn`/`recordBtn`/`playBtn` の `addEventListener` 登録を `function init(): void { ... }` に集約し、末尾で `initSinewaveAnalyser()` を呼び出す。`document.getElementById(...)` によるボタン/canvas 参照はモジュールトップレベルのまま残置（ES module は defer 相当で実行されるため DOM 存在は保証されており、真の「副作用」である addEventListener 登録のみを対象とした。計画の「ロード時副作用の init() 集約」の対象を副作用＝リスナー登録に限定し、純粋な DOM 参照取得は対象外とする判断）
+- 起動: `if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); } else { init(); }`（readyState ガード付き）。旧 `import './sinewaveAnalyser.js'`（副作用のみの bare import）を `import { initSinewaveAnalyser } from './sinewaveAnalyser.js'` の明示的 import + 呼び出しに変更
+- `initializeAudioAndVisualizer()` 内の audioContext 待ちポーリングに **5000ms のタイムアウトを追加**（計画 0.5 例外①: timeout 時は現行の続行と等価に `resolve`、`reject` にはしない）。通常フローでは即座に 'running' になるため到達しない防御的変更
+- **resume 経路の手動確認**（計画 1.4-D 盲点-1 対応）: `--autoplay-policy=no-user-gesture-required` フラグを意図的に外した状態で init-btn クリック（real user gesture 相当）から通しを実行。**結果**: 847ms で完了・エラーゼロ。Chromium は user gesture ハンドラ内で生成された AudioContext を即座に 'running' にするため、フラグを外しても `suspended → resume()` 分岐には到達しなかった（盲点は解消されず、依然 E2E 未カバーのまま。この事実を記録し、盲点として維持する）
+- 検証: `npm run typecheck`/`lint`/`format:check`/`test`/`build` エラーゼロ。E2E を **3 回連続実行**し全 10 テスト（8 定義 × 2 project、3 skip）グリーン
+
 ---
 
 ## 検証チェックリスト（計画書 Done 基準の転記）
@@ -239,7 +256,7 @@
 - [既知-1] rAF 自己ループの多重化（初期化ボタン連打で発火しうる）→ M2-11 で設計改善として解消予定
 - [既知-2] `calculateSynthesisWaveform` の sampleRate=44100 ハードコード vs 音声パスの実 sampleRate 不一致 → 引数化・デフォルト維持で温存
 - [既知-3] main.js の未使用 `const sampleRate = 44100`（デッドコード）→ 記録のみ
-- [盲点-1] suspended → resume 分岐は E2E で実行されない（autoplay 緩和下）→ M2-9 で手動確認
+- [盲点-1] suspended → resume 分岐は E2E で実行されない（autoplay 緩和下）→ M2-9 で手動確認。**結果: autoplay 緩和フラグを外しても Chromium が user gesture 内の AudioContext を即座に running にするため到達せず。盲点は未解消のまま維持（自動テストでは踏めない既知の限界として記録）**
 - [盲点-2] test-wave 3 経路は silence フィクスチャで 0 件にできない場合 E2E 検証不能 → M1-2 で確定。**結果: silence フィクスチャで 5 回連続 0 件を観測、E2E 検証可能と判明（盲点は解消）**
 - [既知-4・修正済み] **record-btn の初期化未完了時競合状態**（2026-07-08、ユーザー実機報告 → 修正）: `record-btn` は元 main.js から一貫して `disabled` 属性を持たず、初期化完了（`audioStream` 確定）前でも押せる状態だった。初期化完了前に押すと `audioStream` が `undefined` のまま `new MediaRecorder(undefined)` が呼ばれ `TypeError: Failed to construct 'MediaRecorder': parameter 1 is not of type 'MediaStream'` で失敗（この場合 `record-btn` のテキストは「録音中...」に変化しない）。フェイクデバイス E2E は許可プロンプトが即時付与されるため踏まなかったが、実マイクでは許可待ちの体感時間が長くなり踏みやすい。`investigate` スキルで実際にライブサイトへ Playwright アクセスし `[error] Recording error: TypeError...` を実地で再現・確定。**修正**: `index.html` の `record-btn` に `disabled` を追加、`main.ts` の初期化完了処理（`initBtn.disabled = true` と同じ箇所）で `recordBtn.disabled = false` を設定。回帰テスト（`e2e/workflow.spec.ts` 「bug fix: record-btn disabled until init completes」）を追加し、修正前に失敗・修正後に成功することを確認済み
 

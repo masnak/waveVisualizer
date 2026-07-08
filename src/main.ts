@@ -1,10 +1,11 @@
-// main.js から born-ESM へそのまま複製（M2-8、最後の変換ファイル）。
-// state.ts / ui/status.ts / visualizers を正式に import へ切替え、window ブリッジを除去。
+// main.js から born-ESM へそのまま複製（M2-8）。M2-9 でロード時副作用を init() へ
+// 集約: main.ts / sinewaveAnalyser.ts 両方のイベントリスナー登録を、DOMContentLoaded
+// （readyState ガード付き）で呼ばれる init() 内に移した。
 import { state } from './state.js';
 import { showStatusMessage } from './ui/status.js';
 import { WaveVisualizer } from './visualizers/waveVisualizer.js';
 import { SpectrumVisualizer } from './visualizers/spectrumVisualizer.js';
-import './sinewaveAnalyser.js'; // イベントリスナー登録の副作用のみが目的
+import { initSinewaveAnalyser } from './sinewaveAnalyser.js';
 
 let audioContextInitialized = false;
 let audioStream: MediaStream | undefined;
@@ -19,20 +20,63 @@ const sampleRate = 44100;
 const waveformCanvas = document.getElementById('waveform-canvas') as HTMLCanvasElement;
 const spectrumCanvas = document.getElementById('spectrum-canvas') as HTMLCanvasElement;
 
-initBtn.addEventListener('click', async () => {
-  try {
-    await initializeAudioAndVisualizer();
-    initBtn.disabled = true;
-    // 既知バグ修正（2026-07-08、ユーザー報告）: record-btn は初期化完了前から
-    // 常に押せる状態だったため、audioStream 未確定のまま MediaRecorder の
-    // 構築に失敗する競合状態があった。初期化完了までは無効化する。
-    recordBtn.disabled = false;
-    showStatusMessage('オーディオシステムが正常に初期化されました');
-  } catch (error) {
-    console.error('Initialization error:', error);
-    showStatusMessage('初期化中にエラーが発生しました: ' + (error as Error).message, 'error');
-  }
-});
+function init(): void {
+  initBtn.addEventListener('click', async () => {
+    try {
+      await initializeAudioAndVisualizer();
+      initBtn.disabled = true;
+      // 既知バグ修正（2026-07-08、ユーザー報告）: record-btn は初期化完了前から
+      // 常に押せる状態だったため、audioStream 未確定のまま MediaRecorder の
+      // 構築に失敗する競合状態があった。初期化完了までは無効化する。
+      recordBtn.disabled = false;
+      showStatusMessage('オーディオシステムが正常に初期化されました');
+    } catch (error) {
+      console.error('Initialization error:', error);
+      showStatusMessage('初期化中にエラーが発生しました: ' + (error as Error).message, 'error');
+    }
+  });
+
+  recordBtn.addEventListener('click', async () => {
+    try {
+      if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        startRecording(audioStream!);
+        recordBtn.textContent = '録音中...';
+        showStatusMessage('録音を開始しました（2秒間）');
+        console.log('recorder started');
+        // スペクトラム分析モードを録音中に設定
+        if (spectrumVisualizer) {
+          spectrumVisualizer.setRecordingMode(true);
+        }
+
+        setTimeout(() => {
+          stopRecording();
+          recordBtn.textContent = '録音開始';
+          playBtn.disabled = false;
+          playBtn.style.fontWeight = 'bold';
+          (document.getElementById('analyse-btn') as HTMLButtonElement).disabled = false;
+          (document.getElementById('analyse-btn') as HTMLButtonElement).style.fontWeight = 'bold';
+          showStatusMessage('録音が完了しました');
+          // スペクトラム分析モードを録音終了に設定
+          if (spectrumVisualizer) {
+            spectrumVisualizer.setRecordingMode(false);
+          }
+        }, 2000);
+      }
+    } catch (error) {
+      console.error('Recording error:', error);
+      showStatusMessage('録音中にエラーが発生しました: ' + (error as Error).message, 'error');
+    }
+  });
+
+  playBtn.addEventListener('click', async () => {
+    if (state.recordedChunks.length) {
+      await playBack();
+    }
+  });
+
+  // Event listeners for analysis functionality are in sinewaveAnalyser.ts
+  initSinewaveAnalyser();
+}
 
 async function initializeAudioContext(): Promise<void> {
   if (audioContextInitialized) return;
@@ -82,9 +126,17 @@ async function initializeAudioAndVisualizer(): Promise<void> {
   console.log('wave analyser working');
 
   // Wait for audioContext to initialize
+  // 計画 0.5 例外①: タイムアウトを追加（timeout 時は現行の続行と等価に resolve、
+  // reject にはしない）。無限ポーリングを避けるための防御的な変更で、
+  // 通常のフローでは audioContext はほぼ即座に 'running' になるため到達しない。
+  const AUDIO_CONTEXT_POLL_TIMEOUT_MS = 5000;
   await new Promise<void>((resolve) => {
+    const startedAt = Date.now();
     const checkAudioContextState = () => {
-      if (state.audioContext!.state === 'running') {
+      if (
+        state.audioContext!.state === 'running' ||
+        Date.now() - startedAt >= AUDIO_CONTEXT_POLL_TIMEOUT_MS
+      ) {
         resolve();
       } else {
         setTimeout(checkAudioContextState, 100);
@@ -163,46 +215,14 @@ async function playBack(): Promise<void> {
   }
 }
 
-recordBtn.addEventListener('click', async () => {
-  try {
-    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-      startRecording(audioStream!);
-      recordBtn.textContent = '録音中...';
-      showStatusMessage('録音を開始しました（2秒間）');
-      console.log('recorder started');
-      // スペクトラム分析モードを録音中に設定
-      if (spectrumVisualizer) {
-        spectrumVisualizer.setRecordingMode(true);
-      }
-
-      setTimeout(() => {
-        stopRecording();
-        recordBtn.textContent = '録音開始';
-        playBtn.disabled = false;
-        playBtn.style.fontWeight = 'bold';
-        (document.getElementById('analyse-btn') as HTMLButtonElement).disabled = false;
-        (document.getElementById('analyse-btn') as HTMLButtonElement).style.fontWeight = 'bold';
-        showStatusMessage('録音が完了しました');
-        // スペクトラム分析モードを録音終了に設定
-        if (spectrumVisualizer) {
-          spectrumVisualizer.setRecordingMode(false);
-        }
-      }, 2000);
-    }
-  } catch (error) {
-    console.error('Recording error:', error);
-    showStatusMessage('録音中にエラーが発生しました: ' + (error as Error).message, 'error');
-  }
-});
-
-playBtn.addEventListener('click', async () => {
-  if (state.recordedChunks.length) {
-    await playBack();
-  }
-});
-
-// Event listeners for analysis functionality are in sinewaveAnalyser.ts
-
 // 未使用（元 main.js から複製、挙動保存のため保持。既知バグとして進捗ログに記録）
 void getMediaStream;
 void sampleRate;
+
+// ロード時副作用の起動（M2-9）。ES module は defer 相当で実行されるため、
+// 通常 readyState は既に 'loading' 以外だが、念のためガードする。
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}

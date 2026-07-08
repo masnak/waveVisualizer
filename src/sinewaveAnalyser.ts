@@ -884,47 +884,50 @@ async function analyseRecording(): Promise<number> {
   }
 }
 
-const analyseBtn = document.getElementById('analyse-btn') as HTMLButtonElement;
-const sineWaveBtn = document.getElementById('sine-wave-btn') as HTMLButtonElement;
+// ロード時副作用の init() 集約（M2-9）。main.ts の init() から明示的に呼ばれる。
+export function initSinewaveAnalyser(): void {
+  const analyseBtn = document.getElementById('analyse-btn') as HTMLButtonElement;
+  const sineWaveBtn = document.getElementById('sine-wave-btn') as HTMLButtonElement;
 
-analyseBtn.addEventListener('click', async () => {
-  try {
-    showStatusMessage('位相情報保持で音声解析を開始しています...');
+  analyseBtn.addEventListener('click', async () => {
+    try {
+      showStatusMessage('位相情報保持で音声解析を開始しています...');
 
-    const componentCount = await analyseRecording();
-    document.getElementById('sine-waves')!.style.display = 'block';
-    analyseBtn.disabled = true;
-    sineWaveBtn.disabled = false;
-    sineWaveBtn.style.fontWeight = 'bold';
+      const componentCount = await analyseRecording();
+      document.getElementById('sine-waves')!.style.display = 'block';
+      analyseBtn.disabled = true;
+      sineWaveBtn.disabled = false;
+      sineWaveBtn.style.fontWeight = 'bold';
 
-    if (componentCount > 0) {
-      showStatusMessage(`解析完了！${componentCount}個の成分で位相情報付き音声再現が可能です。`);
-    } else {
-      showStatusMessage('解析完了。テスト用の固定周波数を使用できます。');
-    }
-  } catch (error) {
-    console.error('Error in analyse button handler:', error);
-    showStatusMessage('解析中にエラーが発生しました: ' + (error as Error).message, 'error');
-  }
-});
-
-sineWaveBtn.addEventListener('click', () => {
-  try {
-    const sineWavesList = document.getElementById('sine-waves-list')!;
-    const checkboxes = sineWavesList.getElementsByTagName('input');
-
-    let stoppedCount = 0;
-    for (const checkbox of checkboxes) {
-      if (checkbox.checked) {
-        checkbox.checked = false;
-        checkbox.dispatchEvent(new Event('change'));
-        stoppedCount++;
+      if (componentCount > 0) {
+        showStatusMessage(`解析完了！${componentCount}個の成分で位相情報付き音声再現が可能です。`);
+      } else {
+        showStatusMessage('解析完了。テスト用の固定周波数を使用できます。');
       }
+    } catch (error) {
+      console.error('Error in analyse button handler:', error);
+      showStatusMessage('解析中にエラーが発生しました: ' + (error as Error).message, 'error');
     }
-    console.log(`Stopped ${stoppedCount} sine waves`);
+  });
 
-    showStatusMessage(`${stoppedCount}個の正弦波を停止しました`);
-  } catch (error) {
-    console.error('Error stopping sine waves:', error);
-  }
-});
+  sineWaveBtn.addEventListener('click', () => {
+    try {
+      const sineWavesList = document.getElementById('sine-waves-list')!;
+      const checkboxes = sineWavesList.getElementsByTagName('input');
+
+      let stoppedCount = 0;
+      for (const checkbox of checkboxes) {
+        if (checkbox.checked) {
+          checkbox.checked = false;
+          checkbox.dispatchEvent(new Event('change'));
+          stoppedCount++;
+        }
+      }
+      console.log(`Stopped ${stoppedCount} sine waves`);
+
+      showStatusMessage(`${stoppedCount}個の正弦波を停止しました`);
+    } catch (error) {
+      console.error('Error stopping sine waves:', error);
+    }
+  });
+}
