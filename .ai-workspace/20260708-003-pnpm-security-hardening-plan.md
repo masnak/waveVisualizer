@@ -102,7 +102,7 @@
 
 - **`minimumReleaseAge` を設定する**（Security Engineer 推奨、新規追加）
   - 公開直後（一定期間内）のパッケージバージョンのインストールを避けるクールダウン機能。本計画が主眼とする脅威（悪意ある postinstall スクリプトを含む新規公開パッケージ）に直接効く、数少ない「攻撃そのものを防ぐ」対策。OSV-Scanner は既知報告済み脆弱性のみ検知でき、公開直後の未報告の悪性パッケージは検知できないため、frozen-lockfile・OSV-Scanner いずれのゲートも防げない脅威に対する具体的な補完策として追加する
-  - **実装時判明（訂正）**: 当初 `package.json` の `pnpm` フィールドを想定していたが、pnpm v11 では設定場所が `pnpm-workspace.yaml` に一本化されている（[pnpm 公式 settings ドキュメント](https://pnpm.io/settings)で確認）。実装は `pnpm-workspace.yaml` の `minimumReleaseAge: 1440`（1日=1440分）
+  - **実装時判明（訂正）**: 当初 `package.json` の `pnpm` フィールドを想定していたが、pnpm v11 では設定場所が `pnpm-workspace.yaml` に一本化されている（[pnpm 公式 settings ドキュメント](https://pnpm.io/settings)で確認）。実装は `pnpm-workspace.yaml` の `minimumReleaseAge: 10080`（7日=10080分、1日=1440分から2026-07-08 にユーザー判断で1週間へ変更。悪意あるパッケージの多くは公開後数日以内にコミュニティ・自動スキャナーにより発見・撤回されるため、より長いクールダウンでその大半を回避できる）
 
 - **Dependabot は `github-actions` エコシステムのみ今回追加し、`npm` エコシステムは延期する**（Security Engineer 推奨を、Phase 5 PM 精査 + ユーザー確認で範囲調整）
   - `.github/dependabot.yml` に `github-actions` エコシステム（Action のタグ更新 PR を自動生成、SHA 固定の陳腐化に追従。更新頻度が低くノイズが小さい）のみ設定する

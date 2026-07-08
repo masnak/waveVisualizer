@@ -20,7 +20,7 @@
 ### Step 1: package.json / pnpm-workspace.yaml のセットアップ ✅
 - **作業内容**:
   - `package.json` に `packageManager: "pnpm@11.9.0+sha512.<hex-hash>"` を追加
-  - `pnpm-workspace.yaml` を新規作成し `minimumReleaseAge: 1440`（1日）を設定
+  - `pnpm-workspace.yaml` を新規作成し `minimumReleaseAge: 1440`（1日）を設定。**2026-07-08 追記**: ユーザー判断で `10080`（1週間）に変更。既存 `pnpm-lock.yaml` 内に直近1週間以内に公開されたバージョンが39件含まれておりポリシー違反で `pnpm install` が失敗 → `pnpm clean --lockfile` && `pnpm install` で1週間クールダウンを満たすバージョンに再解決（例: vite 8.1.3→8.1.2、typescript-eslint 8.63.0→8.62.1）。ローカル全検証（typecheck/lint/format/test/build/E2E）再実施しグリーン確認
 - **意思決定（実装時判明）**:
   - corepack のハッシュ記法は npm の `dist.integrity`（`sha512-<base64>`）ではなく `sha512.<hex>` 形式。`npm view pnpm@11.9.0 dist.integrity` の base64 値を hex にデコードして使用
   - pnpm v11 では `minimumReleaseAge`/`onlyBuiltDependencies`（→ `allowBuilds` に改名）の設定場所が `package.json` の `pnpm` フィールドから `pnpm-workspace.yaml` へ移動済み（[公式ドキュメント](https://pnpm.io/settings)で確認）。計画書はこれを反映して修正済み

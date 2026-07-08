@@ -63,7 +63,7 @@ fft.js 等の外部 npm パッケージ導入に先立ち整備。現状は外�
 
 - **pnpm 選定理由**: frozen-lockfile・OSV スキャンは npm でも実現できるが、依存パッケージのライフサイクルスクリプト（`postinstall` 等）を**既定でブロックし許可制にする**設計（pnpm v10 以降の既定挙動）は pnpm 固有。npm の `--ignore-scripts` はオプトアウト方式でフラグ付け忘れが事故になりうるのに対し、pnpm は既定で安全側に倒れる
 - **`pnpm.onlyBuiltDependencies` 相当（pnpm v11 以降は `pnpm-workspace.yaml` の `allowBuilds`）は実測してから個別許可**。`pnpm approve-builds` の対話的一括承認は使わない。将来新しい依存を追加するたびに、ブロックされたスクリプトを個別確認する運用コストが恒常的に発生する
-- **`pnpm-workspace.yaml` の `minimumReleaseAge`**（公開直後のパッケージバージョンのインストールを避けるクールダウン）で、OSV-Scanner では検知できない「新規公開の悪性パッケージ」にも備える
+- **`pnpm-workspace.yaml` の `minimumReleaseAge`**（公開直後のパッケージバージョンのインストールを避けるクールダウン、現在7日=10080分）で、OSV-Scanner では検知できない「新規公開の悪性パッケージ」にも備える。**運用上の注意**: `pnpm update` 等で lockfile を更新した際、公開されたばかりのバージョンに解決されると、その後クールダウン期間中は CI の `pnpm install --frozen-lockfile` が失敗しうる（`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`）。発生した場合は `pnpm clean --lockfile && pnpm install` で再解決すればクールダウンを満たす直前のバージョンに自動的に収まる
 - **新規に追加するサードパーティ GitHub Actions はコミット SHA で固定**（`pnpm/action-setup`、`google/osv-scanner-action` 等）。既存の GitHub 公式 Action（`actions/checkout` 等）は対象外
 - **OSV-Scanner**: PR 差分・週次フルスキャンの両方を CI 失敗（hard-fail）扱い。既存依存に脆弱性がヒットした場合は `osv-scanner.toml` に期限付き ignore を追記してトリアージする（無条件のゲート無効化はしない）
 - **Dependabot は `github-actions` エコシステムのみ**（SHA 固定の陳腐化に追従）。`npm`（pnpm）エコシステムは意図的に延期している。**fft.js 等、初めて実行時依存を追加するタイミングで `npm` エコシステムの Dependabot 設定を追加すること**（`.github/dependabot.yml` にコメントあり）
