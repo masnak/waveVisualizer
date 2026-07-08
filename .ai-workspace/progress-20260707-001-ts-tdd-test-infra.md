@@ -12,7 +12,7 @@
 ## フェーズ進捗
 
 - M1: テスト基盤 [6/6] (100%) - [状態: ✅ 完了]
-- M2: リファクタ + TS 完全移行 [4/6] (67%) - [状態: 実装中]
+- M2: リファクタ + TS 完全移行 [5/6] (83%) - [状態: 実装中]
 
 ### M1: テスト基盤（自己完結マイルストーン）
 
@@ -33,14 +33,14 @@
 | M2-8 | state 設計 + ESM 化（window ブリッジ、葉→根、src/ 移設、dsp.ts 差し替え、audioContext は移行期 state 方式）+ GitHub Pages デプロイ移行（1.4-G、src/ 移設と atomic） | ✅ 完了 | 4 ファイル ESM 化・E2E 5 回連続グリーン・`vite build` 成功・GitHub Actions 3 ワークフロー（CI/CI Smoke/Deploy to GitHub Pages）全て初回グリーン・**ライブ URL（masnak.github.io/waveVisualizer）で初期化→録音→解析→合成再生の通しを実機確認済み（スクリーンショット証跡あり）**。**計画からの変更点**: CI E2E の build+preview 対象切替は `vite preview` の既知の不具合により断念（詳細下記） |
 | M2-9 | init() 集約（両ファイル、readyState ガード、ポーリング timeout=resolve） | ✅ 完了 | E2E 3 回連続グリーン（計 10 テスト）/ resume 経路の手動確認 1 回実施（盲点-1 を再確認、詳細下記） |
 | M2-10 | synthesis.ts / signal.ts / collectSelectedComponents（includeTestWaves パラメータ化）抽出 | ✅ 完了 | ユニット 32 テスト（dsp 11 + signal 4 + synthesis 17）+ E2E 3 回連続グリーン。coverage: dsp.ts 98.73% / synthesis.ts 98.88%（stmts） |
-| M2-11 | 全 .ts 化 + allowJs off + rAF start/stop（設計改善と分類）+ Map 化 + AppContext 収斂 | ⬜ 未着手 | `tsc --noEmit`（strict, allowJs off）ゼロ / ブリッジ・state.audioContext 全廃 / ユニット + E2E グリーン |
+| M2-11 | 全 .ts 化 + allowJs off + rAF start/stop（設計改善と分類）+ Map 化 + AppContext 収斂 | ✅ 完了 | `tsc --noEmit`（strict, allowJs off）ゼロ / `state.audioContext` 廃止・`context.ts` の AppContext へ収斂 / rAF 多重化バグの回帰テストで解消を実証 / ユニット 32 + E2E 3 回連続グリーン（計 12 テスト） |
 | M2-12 | 最終ドキュメント同期 + coverage 参考値・既存バグ / E2E 盲点一覧の記録 | ⬜ 未着手 | CLAUDE.md/README のコマンドが実際に動く |
 
 ---
 
 ## 現在実行中
 
-**M1 完了。M2-7・M2-8・M2-9・M2-10 完了**（GitHub Pages は GitHub Actions デプロイへ移行済み、record-btn 競合状態バグも修正済み）。次は M2-11（全 .ts 化 + allowJs off + 仕上げ）着手待ち。
+**M1 完了。M2-7・M2-8・M2-9・M2-10・M2-11 完了**（GitHub Pages は GitHub Actions デプロイへ移行済み、record-btn 競合状態バグも修正済み、既知-1 の rAF 多重化バグも設計改善で解消）。次は M2-12（最終ドキュメント同期 + クローズ）着手待ち。
 
 ---
 
@@ -210,6 +210,22 @@ M2-9 着手前に、ユーザーから実機（ライブサイト + ローカル
 - テスト: `src/audio/signal.test.ts`（4 件、解析的な sin 公式との一致を検証）、`src/audio/synthesis.test.ts`（17 件: `collectSelectedComponents` の非対称・範囲外 index・test-wave フォールバック値等、`synthesizeAudioSamples`/`calculateDisplaySynthesisWaveform` の決定性・正規化範囲・既定 sampleRate 挙動）。Float32Array の単精度精度に合わせて許容誤差を調整（`toBeCloseTo` の桁数、絶対誤差 1e-6）
 - 検証: `npm test` 32 tests 全グリーン（dsp 11 + signal 4 + synthesis 17）/ `typecheck`/`lint`/`format:check`/`build` エラーゼロ / E2E を **3 回連続実行**し全 10 テストグリーン（happy path の合成再生〜比較まで含む） / `test:coverage`: `dsp.ts` 98.73%、`synthesis.ts` 98.88%（stmts、report-only）
 
+### M2-11: 全 .ts 化 + allowJs off + rAF start/stop + Map 化 + AppContext 収斂（2026-07-08）
+
+- `tsconfig.json` の `allowJs`/`checkJs` を削除（`allowJs: false` 相当）。`src/` 配下は M2-8 時点で既に全ファイル `.ts` 化済みだったため、この時点で `残りの.jsをts化` する対象は存在せず、フラグ変更のみでエラーゼロを確認
+- **rAF start/stop 契約化**（既知-1 の設計改善、挙動保存ではなく明示的な設計改善として分類）:
+  - `WaveVisualizer`/`SpectrumVisualizer` に `start()`/`stop()`/`private renderLoop()` を追加。`rafId`（`cancelAnimationFrame` 用）と `running` フラグを保持し、`start()` は `running` が真なら即座に return する冪等実装。`drawWaveform()`/`drawSpectrum()` 自体からは自己再帰の `requestAnimationFrame` 呼び出しを除去し、純粋な「1 フレーム分描画する」メソッドに戻した
+  - `main.ts` の呼び出し箇所を `waveVisualizer!.drawWaveform()` → `waveVisualizer!.start()`、`spectrumVisualizer!.drawSpectrum()` → `spectrumVisualizer!.start()` に変更
+  - **既知-1 の解消を実証**: E2E に「初期化ボタン連打（disabled 化を待たず即座に2回クリック）→ エラーなし → 通常フロー（録音〜再生ボタン有効化）が継続する」回帰テストを追加し、修正が機能することを確認
+- **再生ハンドルの Map 化**: `sinewaveAnalyser.ts` の `event.target.sineWavePlayer`（DOM 要素へのカスタムプロパティ格納）を `const activeSineWavePlayers = new Map<string, SineWavePlayer>()`（checkbox id をキー）に変更。`handleSineWaveCheckbox` 内の参照箇所（設定・取得・削除）を Map の `set`/`get`/`delete` に置き換え、不要になった `CheckboxWithPlayer` 型を削除
+- **AppContext 純注入への収斂**（1.4-A の達成点）:
+  - `src/context.ts` を新設: `export interface AppContext { audioContext: AudioContext | undefined }`
+  - `state.ts` から `audioContext` フィールドを除去し、`recordedChunks` のみの真に残余な共有状態に整理
+  - `main.ts`: `const ctx: AppContext = { audioContext: undefined }` をモジュールスコープで生成。`state.audioContext` への書込み・参照を全て `ctx.audioContext` に置換。`initSinewaveAnalyser(ctx)` として明示的に注入
+  - `sinewaveAnalyser.ts`: `playSineWave`/`synthesizeSelectedComponents`/`playSynthesizedAudio`/`handleSineWaveCheckbox`/`displaySineWaves`/`analyseRecording` の各関数に `audioContext: AudioContext` を明示的な引数として追加し、`state.audioContext!` を全て置換。`initSinewaveAnalyser(ctx: AppContext)` の `analyseBtn` ハンドラで `analyseRecording(ctx.audioContext!)` を起点に、以降は全て明示的な引数として下流へ伝播（クロージャ捕捉ではなく関数シグネチャでの受け渡しを採用し、個々の関数の独立したテスト可能性を保った）
+  - 移行期の `state.audioContext`（プロパティ変更方式の例外）は完全に廃止され、`state.ts` には `recordedChunks` のみが残る
+- 検証: `npm run typecheck`（strict, allowJs off）エラーゼロ / `lint`/`format:check` エラーゼロ / `npm test` 32 tests 全グリーン（既存の dsp/signal/synthesis テストは無影響） / `npm run build` 成功 / E2E を **3 回連続実行**し全 12 テスト（9 定義 × 2 project、3 skip、rAF 回帰テスト含む）グリーン
+
 ---
 
 ## 検証チェックリスト（計画書 Done 基準の転記）
@@ -267,7 +283,7 @@ M2-9 着手前に、ユーザーから実機（ライブサイト + ローカル
 
 計画時点で判明しているもの（実装中の観測で追記・確定する）:
 
-- [既知-1] rAF 自己ループの多重化（初期化ボタン連打で発火しうる）→ M2-11 で設計改善として解消予定
+- [既知-1・解消済み] rAF 自己ループの多重化（初期化ボタン連打で発火しうる）→ M2-11 で `WaveVisualizer`/`SpectrumVisualizer` を `start()`/`stop()` 契約化（`running` フラグで `start()` を冪等化）し設計改善として解消。E2E 回帰テスト（「初期化ボタン連打→エラーなし→通常フロー継続」）で解消を実証
 - [既知-2] `calculateSynthesisWaveform` の sampleRate=44100 ハードコード vs 音声パスの実 sampleRate 不一致 → 引数化・デフォルト維持で温存
 - [既知-3] main.js の未使用 `const sampleRate = 44100`（デッドコード）→ 記録のみ
 - [盲点-1] suspended → resume 分岐は E2E で実行されない（autoplay 緩和下）→ M2-9 で手動確認。**結果: autoplay 緩和フラグを外しても Chromium が user gesture 内の AudioContext を即座に running にするため到達せず。盲点は未解消のまま維持（自動テストでは踏めない既知の限界として記録）**

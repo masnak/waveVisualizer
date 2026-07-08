@@ -219,3 +219,27 @@ test.describe('bug fix: record-btn disabled until init completes (2026-07-08)', 
     tracker.assertClean();
   });
 });
+
+test.describe('design improvement: visualizer rAF start/stop idempotency (M2-11)', () => {
+  // 既知バグ-1（rAF 自己ループの多重化、初期化ボタン連打で発火しうる）が
+  // WaveVisualizer/SpectrumVisualizer の start()/stop() 契約化で解消されたことを固定する。
+  test('rapid double-click on init-btn does not error or break subsequent flow', async ({
+    page,
+  }) => {
+    const tracker = trackConsoleAndPageErrors(page);
+    await page.goto('/');
+
+    // 初期化完了（disabled 化）を待たず、即座に2回連続クリックする
+    await page.click('#init-btn');
+    await page.click('#init-btn', { force: true }).catch(() => {});
+
+    await expect(page.locator('#init-btn')).toBeDisabled({ timeout: 5000 });
+    await expect(page.locator('#record-btn')).toBeEnabled({ timeout: 3000 });
+
+    // 通常フローが引き続き正常に動作することを確認
+    await page.click('#record-btn');
+    await expect(page.locator('#play-btn')).toBeEnabled({ timeout: 5000 });
+
+    tracker.assertClean();
+  });
+});

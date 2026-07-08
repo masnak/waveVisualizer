@@ -1,10 +1,16 @@
-// waveVisualizer.js から born-ESM へそのまま複製（M2-8）。挙動は完全に維持。
+// waveVisualizer.js から born-ESM へ複製（M2-8）。
+// M2-11: rAF ループを start/stop 契約に変更（既知バグ-1「初期化ボタン連打で
+// rAF 自己ループが多重化しうる」問題の設計改善としての解消。挙動保存ではなく
+// 明示的な設計改善として分類・記録）。start() は running フラグで冪等化し、
+// 複数回呼ばれても rAF チェーンは 1 本だけになる。
 export class WaveVisualizer {
   analyser: AnalyserNode;
   canvas: HTMLCanvasElement;
   canvasContext: CanvasRenderingContext2D;
   bufferLength: number;
   dataArray: Uint8Array<ArrayBuffer>;
+  private rafId: number | null = null;
+  private running = false;
 
   constructor(analyser: AnalyserNode, canvas: HTMLCanvasElement) {
     this.analyser = analyser;
@@ -12,6 +18,27 @@ export class WaveVisualizer {
     this.canvasContext = this.canvas.getContext('2d')!;
     this.bufferLength = this.analyser.fftSize;
     this.dataArray = new Uint8Array(this.bufferLength);
+  }
+
+  start(): void {
+    if (this.running) return; // 多重ループ防止（冪等化）
+    this.running = true;
+    this.renderLoop();
+  }
+
+  stop(): void {
+    this.running = false;
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+  }
+
+  private renderLoop(): void {
+    this.drawWaveform();
+    if (this.running) {
+      this.rafId = requestAnimationFrame(() => this.renderLoop());
+    }
   }
 
   drawWaveform(): void {
@@ -46,7 +73,5 @@ export class WaveVisualizer {
 
     this.canvasContext.lineTo(this.canvas.width, this.canvas.height / 2);
     this.canvasContext.stroke();
-
-    requestAnimationFrame(() => this.drawWaveform());
   }
 }

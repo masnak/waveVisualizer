@@ -1,9 +1,12 @@
-// sinewaveAnalyser.js から born-ESM へ複製（M2-8）。挙動は維持しつつ 2 点を変換:
-// ① audioContext / recordedChunks は state.ts 経由（1.4-A 移行期の例外）
-// ② analyseRecording() の DFT 計算部分は dsp.ts の analyseFrequencyComponents() 呼び出しへ差し替え
+// sinewaveAnalyser.js から born-ESM へ複製（M2-8）。挙動は維持しつつ変換:
+// ① recordedChunks は state.ts 経由（1.4-A、真に残余の共有状態）
+// ② audioContext は M2-11 で AppContext 純注入へ収斂（1.4-A の達成点）。
+//    initSinewaveAnalyser(ctx) が受け取った ctx から明示的な引数として各関数へ渡す
+// ③ analyseRecording() の DFT 計算部分は dsp.ts の analyseFrequencyComponents() 呼び出しへ差し替え
 //    （計画通り、この差し替えを golden-vector が保護する）
 // showStatusMessage は ui/status.ts から import（main.ts も同じ関数を import する）。
 import { state } from './state.js';
+import type { AppContext } from './context.js';
 import { showStatusMessage } from './ui/status.js';
 import { analyseFrequencyComponents } from './audio/dsp.js';
 import { renderSineSamples } from './audio/signal.js';
@@ -44,14 +47,17 @@ interface SineWavePlayer {
   stop: () => void;
 }
 
-type CheckboxWithPlayer = HTMLInputElement & { sineWavePlayer?: SineWavePlayer | null };
+// M2-11: 再生ハンドルを DOM 要素プロパティ（event.target.sineWavePlayer）から
+// checkbox id をキーとした Map へ移行（計画 1.4-A 点4、設計改善）。
+const activeSineWavePlayers = new Map<string, SineWavePlayer>();
 
 // 位相情報付きサイン波を再生するための関数
 async function playSineWave(
   frequency: number,
   amplitude: number,
   rawAmplitude: number,
-  phase = 0,
+  phase: number,
+  audioContext: AudioContext,
 ): Promise<SineWavePlayer | null> {
   try {
     console.log(
@@ -60,9 +66,9 @@ async function playSineWave(
 
     // 短い時間の位相制御可能なAudioBufferを生成
     const duration = 5; // 5秒間の連続再生
-    const sampleRate = state.audioContext!.sampleRate;
+    const sampleRate = audioContext.sampleRate;
     const length = Math.floor(duration * sampleRate);
-    const buffer = state.audioContext!.createBuffer(1, length, sampleRate);
+    const buffer = audioContext.createBuffer(1, length, sampleRate);
     const data = buffer.getChannelData(0);
 
     // 相対振幅を正確に保持した音量計算
@@ -81,13 +87,13 @@ async function playSineWave(
     data.set(renderSineSamples(length, sampleRate, frequency, gainValue, phase));
 
     // AudioBufferSourceNodeで再生
-    const source = state.audioContext!.createBufferSource();
+    const source = audioContext.createBufferSource();
     source.buffer = buffer;
-    source.connect(state.audioContext!.destination);
+    source.connect(audioContext.destination);
 
     // Audio contextの状態を確認
-    if (state.audioContext!.state === 'suspended') {
-      await state.audioContext!.resume();
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
     }
 
     source.start();
@@ -119,7 +125,9 @@ async function playSineWave(
 }
 
 // 位相情報付き音声合成（選択された成分から完全な音声を生成）
-async function synthesizeSelectedComponents(): Promise<AudioBuffer | null> {
+async function synthesizeSelectedComponents(
+  audioContext: AudioContext,
+): Promise<AudioBuffer | null> {
   try {
     console.log('=== 位相制御音声合成開始 ===');
 
@@ -141,9 +149,9 @@ async function synthesizeSelectedComponents(): Promise<AudioBuffer | null> {
 
     // 元録音と同じ長さのバッファを作成
     const duration = 2; // 元録音と同じ2秒
-    const sampleRate = state.audioContext!.sampleRate;
+    const sampleRate = audioContext.sampleRate;
     const length = Math.floor(duration * sampleRate);
-    const buffer = state.audioContext!.createBuffer(1, length, sampleRate);
+    const buffer = audioContext.createBuffer(1, length, sampleRate);
 
     console.log(`合成音声バッファ作成: ${duration}秒, ${sampleRate}Hz, ${length}サンプル`);
 
@@ -184,7 +192,7 @@ async function synthesizeSelectedComponents(): Promise<AudioBuffer | null> {
 }
 
 // 合成音声を再生
-async function playSynthesizedAudio(): Promise<void> {
+async function playSynthesizedAudio(audioContext: AudioContext): Promise<void> {
   try {
     if (!synthesizedBuffer) {
       console.warn('合成音声バッファがありません');
@@ -197,12 +205,12 @@ async function playSynthesizedAudio(): Promise<void> {
       `バッファ情報: ${synthesizedBuffer.duration.toFixed(2)}秒, ${synthesizedBuffer.sampleRate}Hz`,
     );
 
-    const source = state.audioContext!.createBufferSource();
+    const source = audioContext.createBufferSource();
     source.buffer = synthesizedBuffer;
-    source.connect(state.audioContext!.destination);
+    source.connect(audioContext.destination);
 
-    if (state.audioContext!.state === 'suspended') {
-      await state.audioContext!.resume();
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
       console.log('AudioContext resumed');
     }
 
@@ -350,9 +358,10 @@ async function handleSineWaveCheckbox(
   frequency: number,
   amplitude: number,
   rawAmplitude: number,
-  phase = 0,
+  phase: number,
+  audioContext: AudioContext,
 ): Promise<void> {
-  const target = event.target as CheckboxWithPlayer;
+  const target = event.target as HTMLInputElement;
   console.log(
     `Checkbox ${target.checked ? 'checked' : 'unchecked'} for ${frequency.toFixed(2)} Hz`,
   );
@@ -364,9 +373,15 @@ async function handleSineWaveCheckbox(
 
   try {
     if (target.checked) {
-      const sineWavePlayer = await playSineWave(frequency, amplitude, rawAmplitude, phase);
+      const sineWavePlayer = await playSineWave(
+        frequency,
+        amplitude,
+        rawAmplitude,
+        phase,
+        audioContext,
+      );
       if (sineWavePlayer) {
-        target.sineWavePlayer = sineWavePlayer;
+        activeSineWavePlayers.set(target.id, sineWavePlayer);
         console.log(
           `Started sine wave: ${frequency.toFixed(2)} Hz, phase: ${phase.toFixed(3)} rad`,
         );
@@ -375,9 +390,10 @@ async function handleSineWaveCheckbox(
         // チェックボックスの状態は維持（波形表示のため）
       }
     } else {
-      if (target.sineWavePlayer) {
-        target.sineWavePlayer.stop();
-        target.sineWavePlayer = null;
+      const player = activeSineWavePlayers.get(target.id);
+      if (player) {
+        player.stop();
+        activeSineWavePlayers.delete(target.id);
         console.log(`Stopped sine wave: ${frequency.toFixed(2)} Hz`);
       }
     }
@@ -388,7 +404,7 @@ async function handleSineWaveCheckbox(
 }
 
 // 位相情報付きサイン波リストを表示する関数
-function displaySineWaves(sineWaves: FrequencyComponent[]): void {
+function displaySineWaves(sineWaves: FrequencyComponent[], audioContext: AudioContext): void {
   const sineWavesList = document.getElementById('sine-waves-list')!;
   sineWavesList.innerHTML = '';
 
@@ -521,9 +537,9 @@ function displaySineWaves(sineWaves: FrequencyComponent[]): void {
     synthesizeBtn.style.backgroundColor = '#FFA500';
 
     try {
-      const buffer = await synthesizeSelectedComponents();
+      const buffer = await synthesizeSelectedComponents(audioContext);
       if (buffer) {
-        await playSynthesizedAudio();
+        await playSynthesizedAudio(audioContext);
         (document.getElementById('compare-btn') as HTMLButtonElement).disabled = false;
       }
     } catch (error) {
@@ -541,12 +557,12 @@ function displaySineWaves(sineWaves: FrequencyComponent[]): void {
     // 原音再生（比較用）
     if (state.recordedChunks && state.recordedChunks.length > 0) {
       try {
-        const buffer = await state.audioContext!.decodeAudioData(
+        const buffer = await audioContext.decodeAudioData(
           await state.recordedChunks[0].arrayBuffer(),
         );
-        const source = state.audioContext!.createBufferSource();
+        const source = audioContext.createBufferSource();
         source.buffer = buffer;
-        source.connect(state.audioContext!.destination);
+        source.connect(audioContext.destination);
         source.start();
 
         showStatusMessage('🎤 原音を再生中（合成音と比較してください）');
@@ -584,7 +600,7 @@ function displaySineWaves(sineWaves: FrequencyComponent[]): void {
       checkbox.type = 'checkbox';
       checkbox.id = `test-wave-${index}`;
       checkbox.addEventListener('change', async (event) => {
-        await handleSineWaveCheckbox(event, item.freq, -20, item.amp, item.phase);
+        await handleSineWaveCheckbox(event, item.freq, -20, item.amp, item.phase, audioContext);
       });
 
       const label = document.createElement('label');
@@ -612,6 +628,7 @@ function displaySineWaves(sineWaves: FrequencyComponent[]): void {
         sineWave.amplitude,
         sineWave.rawAmplitude,
         sineWave.phase,
+        audioContext,
       );
     });
 
@@ -649,7 +666,7 @@ function displaySineWaves(sineWaves: FrequencyComponent[]): void {
 }
 
 // 位相情報保持FFT解析
-async function analyseRecording(): Promise<number> {
+async function analyseRecording(audioContext: AudioContext): Promise<number> {
   try {
     console.log('Starting phase-preserving audio analysis...');
 
@@ -658,9 +675,7 @@ async function analyseRecording(): Promise<number> {
     }
 
     // 録音データをAudioBufferにデコード
-    const buffer = await state.audioContext!.decodeAudioData(
-      await state.recordedChunks[0].arrayBuffer(),
-    );
+    const buffer = await audioContext.decodeAudioData(await state.recordedChunks[0].arrayBuffer());
 
     console.log('Buffer info:', {
       duration: buffer.duration,
@@ -673,11 +688,11 @@ async function analyseRecording(): Promise<number> {
     const fftSize = 16384;
 
     // 位相情報保持FFT解析（dsp.ts, M2-7 の golden-vector で保護された純粋関数）
-    const result = analyseFrequencyComponents(channelData, state.audioContext!.sampleRate, fftSize);
+    const result = analyseFrequencyComponents(channelData, audioContext.sampleRate, fftSize);
     maxAnalysisAmplitude = result.maxAmplitude;
     frequencyComponents = result.components;
 
-    displaySineWaves(frequencyComponents);
+    displaySineWaves(frequencyComponents, audioContext);
 
     console.log(
       `Phase-preserving analysis complete. Displaying ${frequencyComponents.length} components`,
@@ -692,7 +707,9 @@ async function analyseRecording(): Promise<number> {
 }
 
 // ロード時副作用の init() 集約（M2-9）。main.ts の init() から明示的に呼ばれる。
-export function initSinewaveAnalyser(): void {
+// M2-11: AppContext（ctx.audioContext）を明示的に受け取り、解析ボタンのハンドラ
+// から下流の全関数へ引数として渡す（1.4-A の注入依存パターン）。
+export function initSinewaveAnalyser(ctx: AppContext): void {
   const analyseBtn = document.getElementById('analyse-btn') as HTMLButtonElement;
   const sineWaveBtn = document.getElementById('sine-wave-btn') as HTMLButtonElement;
 
@@ -700,7 +717,7 @@ export function initSinewaveAnalyser(): void {
     try {
       showStatusMessage('位相情報保持で音声解析を開始しています...');
 
-      const componentCount = await analyseRecording();
+      const componentCount = await analyseRecording(ctx.audioContext!);
       document.getElementById('sine-waves')!.style.display = 'block';
       analyseBtn.disabled = true;
       sineWaveBtn.disabled = false;

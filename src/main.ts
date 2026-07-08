@@ -1,7 +1,9 @@
 // main.js から born-ESM へそのまま複製（M2-8）。M2-9 でロード時副作用を init() へ
-// 集約: main.ts / sinewaveAnalyser.ts 両方のイベントリスナー登録を、DOMContentLoaded
-// （readyState ガード付き）で呼ばれる init() 内に移した。
+// 集約。M2-11: audioContext を state.ts のプロパティ変更方式（移行期の例外）から
+// AppContext 純注入へ収斂（計画 1.4-A の達成点）。main.ts が ctx を生成し、
+// initSinewaveAnalyser(ctx) へ明示的に渡す。
 import { state } from './state.js';
+import type { AppContext } from './context.js';
 import { showStatusMessage } from './ui/status.js';
 import { WaveVisualizer } from './visualizers/waveVisualizer.js';
 import { SpectrumVisualizer } from './visualizers/spectrumVisualizer.js';
@@ -12,6 +14,11 @@ let audioStream: MediaStream | undefined;
 let micSoundAnalyser: AnalyserNode | undefined;
 let waveVisualizer: WaveVisualizer | undefined;
 let spectrumVisualizer: SpectrumVisualizer | undefined;
+
+// AppContext: ユーザーが「初期化」を押すまで audioContext は存在しないため、
+// 同一オブジェクト参照を sinewaveAnalyser.ts と共有し、生成後にこのフィールドへ
+// 書き込む（1.4-A の注入依存パターン）。
+const ctx: AppContext = { audioContext: undefined };
 
 const initBtn = document.getElementById('init-btn') as HTMLButtonElement;
 const recordBtn = document.getElementById('record-btn') as HTMLButtonElement;
@@ -75,28 +82,28 @@ function init(): void {
   });
 
   // Event listeners for analysis functionality are in sinewaveAnalyser.ts
-  initSinewaveAnalyser();
+  initSinewaveAnalyser(ctx);
 }
 
 async function initializeAudioContext(): Promise<void> {
   if (audioContextInitialized) return;
-  state.audioContext = new AudioContext();
+  ctx.audioContext = new AudioContext();
   audioContextInitialized = true;
 
   // AudioContext初期化確認
   console.log(
-    `🎵 AudioContext初期化: ${state.audioContext.sampleRate}Hz (ナイキスト: ${state.audioContext.sampleRate / 2}Hz)`,
+    `🎵 AudioContext初期化: ${ctx.audioContext.sampleRate}Hz (ナイキスト: ${ctx.audioContext.sampleRate / 2}Hz)`,
   );
 
   // 異常サンプリングレートの検出
-  if (state.audioContext.sampleRate === 48000) {
+  if (ctx.audioContext.sampleRate === 48000) {
     console.warn(`⚠️ 48kHzサンプリング → 24kHzまで表示`);
-  } else if (state.audioContext.sampleRate !== 44100) {
-    console.warn(`⚠️ 非標準サンプリングレート: ${state.audioContext.sampleRate}Hz`);
+  } else if (ctx.audioContext.sampleRate !== 44100) {
+    console.warn(`⚠️ 非標準サンプリングレート: ${ctx.audioContext.sampleRate}Hz`);
   }
 
   // Initialize micSoundAnalyser, waveVisualizer, and spectrumVisualizer
-  micSoundAnalyser = state.audioContext.createAnalyser();
+  micSoundAnalyser = ctx.audioContext.createAnalyser();
   micSoundAnalyser.fftSize = 16384;
 
   // Analyser設定情報の保存（録音時に表示用）
@@ -109,7 +116,7 @@ async function initializeAudioContext(): Promise<void> {
   };
 
   waveVisualizer = new WaveVisualizer(micSoundAnalyser, waveformCanvas);
-  spectrumVisualizer = new SpectrumVisualizer(micSoundAnalyser, spectrumCanvas, state.audioContext);
+  spectrumVisualizer = new SpectrumVisualizer(micSoundAnalyser, spectrumCanvas, ctx.audioContext);
 }
 
 async function initializeAudioAndVisualizer(): Promise<void> {
@@ -118,11 +125,11 @@ async function initializeAudioAndVisualizer(): Promise<void> {
   audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
   // connect data stream to micSoundAnalyser
-  const source = state.audioContext!.createMediaStreamSource(audioStream);
+  const source = ctx.audioContext!.createMediaStreamSource(audioStream);
   source.connect(micSoundAnalyser!);
 
-  // draw waveform
-  waveVisualizer!.drawWaveform();
+  // draw waveform (M2-11: start/stop 契約。start() は冪等なので多重ループしない)
+  waveVisualizer!.start();
   console.log('wave analyser working');
 
   // Wait for audioContext to initialize
@@ -134,7 +141,7 @@ async function initializeAudioAndVisualizer(): Promise<void> {
     const startedAt = Date.now();
     const checkAudioContextState = () => {
       if (
-        state.audioContext!.state === 'running' ||
+        ctx.audioContext!.state === 'running' ||
         Date.now() - startedAt >= AUDIO_CONTEXT_POLL_TIMEOUT_MS
       ) {
         resolve();
@@ -145,7 +152,7 @@ async function initializeAudioAndVisualizer(): Promise<void> {
     checkAudioContextState();
   });
 
-  spectrumVisualizer!.drawSpectrum();
+  spectrumVisualizer!.start();
   console.log('spectrum analyser working');
 }
 
@@ -184,15 +191,15 @@ function stopRecording(): void {
 
 async function playBack(): Promise<void> {
   try {
-    const buffer = await state.audioContext!.decodeAudioData(
+    const buffer = await ctx.audioContext!.decodeAudioData(
       await state.recordedChunks[0].arrayBuffer(),
     );
-    const source = state.audioContext!.createBufferSource();
+    const source = ctx.audioContext!.createBufferSource();
     source.buffer = buffer;
-    source.connect(state.audioContext!.destination);
+    source.connect(ctx.audioContext!.destination);
 
     // Connect the source to the visualizers
-    const sourceAnalyser = state.audioContext!.createAnalyser();
+    const sourceAnalyser = ctx.audioContext!.createAnalyser();
     sourceAnalyser.fftSize = 16384;
     source.connect(sourceAnalyser);
     waveVisualizer!.analyser = sourceAnalyser;

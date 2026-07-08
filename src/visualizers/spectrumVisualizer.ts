@@ -1,7 +1,8 @@
-// spectrumVisualizer.js から born-ESM へそのまま複製（M2-8）。挙動は完全に維持
+// spectrumVisualizer.js から born-ESM へ複製（M2-8）。挙動は完全に維持
 // （診断ログの量的維持は非保証、計画 1.3 Q4）。
 // window.analyserSettings は main.ts が書き込む値をそのまま読む（実質定数的な
 // 設定値のスナップショットで、頻繁な再代入を伴わないため state.ts には含めない）。
+// M2-11: rAF ループを start/stop 契約に変更（既知バグ-1 の設計改善、waveVisualizer.ts と同様）。
 interface AnalyserSettings {
   fftSize: number;
   frequencyBinCount: number;
@@ -42,6 +43,9 @@ export class SpectrumVisualizer {
     voiceLogged: false,
     analyserSettingsLogged: false,
   };
+
+  private rafId: number | null = null;
+  private running = false;
 
   constructor(analyser: AnalyserNode, canvas: HTMLCanvasElement, audioContext: AudioContext) {
     this.analyser = analyser;
@@ -186,8 +190,27 @@ export class SpectrumVisualizer {
     }
 
     this.drawGrid();
+  }
 
-    requestAnimationFrame(() => this.drawSpectrum());
+  start(): void {
+    if (this.running) return; // 多重ループ防止（冪等化）
+    this.running = true;
+    this.renderLoop();
+  }
+
+  stop(): void {
+    this.running = false;
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+  }
+
+  private renderLoop(): void {
+    this.drawSpectrum();
+    if (this.running) {
+      this.rafId = requestAnimationFrame(() => this.renderLoop());
+    }
   }
 
   drawGrid(): void {
