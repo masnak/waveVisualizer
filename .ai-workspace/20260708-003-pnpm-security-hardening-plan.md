@@ -6,7 +6,7 @@
 対象: パッケージ管理基盤（`package.json` / lockfile / CI ワークフロー3本）
 参照: CLAUDE.md（「依存関係」節「外部 JavaScript ライブラリ不要」の原則）/ `.ai-workspace/20260708-002-sustained-tone-synthesis-quality-proposal.md`（この計画の動機となった fft.js 導入検討。fft.js 導入そのものは本計画のスコープ外）
 
-ステータス: 最終版
+ステータス: 完了（実装済み、PR #1 マージ済み。詳細は `progress-20260708-003-pnpm-security-hardening.md` 参照）
 
 ---
 
