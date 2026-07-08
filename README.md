@@ -164,15 +164,20 @@ waveVisualizer/
 
 ## 🖥 ローカル実行方法
 
+パッケージマネージャは pnpm（corepack 経由）。
+
 ```bash
 # プロジェクトディレクトリに移動
 cd waveVisualizer
 
+# corepack で pnpm を有効化（初回のみ、package.json の packageManager フィールドからバージョン自動解決）
+corepack enable
+
 # 依存関係インストール（初回のみ）
-npm ci
+pnpm install
 
 # Vite dev server 起動
-npm run dev
+pnpm run dev
 
 # ブラウザでアクセス
 open http://localhost:8000
